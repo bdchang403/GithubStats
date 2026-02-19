@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GitHub Stats Dashboard</title>
+  <script src="vendor/chart.min.js"></script>
+  <script src="vendor/papaparse.min.js"></script>
+  <style>
+    :root {
+      --primary: #2da44e;
+      /* GitHub Green */
+      --secondary: #0969da;
+      /* GitHub Blue */
+      --bg: #f6f8fa;
+      --card-bg: #ffffff;
+      --text-main: #24292f;
+      --text-muted: #57606a;
+      --border: #d0d7de;
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: var(--font-family);
+      background: var(--bg);
+      color: var(--text-main);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 280px;
+      background: #ffffff;
+      border-right: 1px solid var(--border);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+
+    .sidebar h2 {
+      font-size: 1.2rem;
+      margin-bottom: 20px;
+      color: var(--text-main);
+    }
+
+    .filter-group {
+      margin-bottom: 20px;
+    }
+
+    .filter-group label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 8px;
+      font-size: 0.9rem;
+    }
+
+    .filter-group select,
+    .filter-group input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #f6f8fa;
+      color: var(--text-main);
+      box-sizing: border-box;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 30px;
+    }
+
+    .brand svg {
+      width: 32px;
+      height: 32px;
+      fill: var(--text-main);
+    }
+
+    /* Main Content */
+    .main {
+      flex: 1;
+      padding: 30px;
+      overflow-y: auto;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 30px;
+    }
+
+    .header h1 {
+      font-size: 1.5rem;
+      margin: 0;
+    }
+
+    .last-updated {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    /* Metrics Grid */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .metric-card {
+      background: var(--card-bg);
+      padding: 20px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .metric-title {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 5px;
+      font-weight: 600;
+    }
+
+    .metric-value {
+      font-size: 1.8rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    /* Charts Grid */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .chart-card {
+      background: var(--card-bg);
+      padding: 20px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+      display: flex;
+      flex-direction: column;
+      /* CRITICAL: Enforce height to prevent infinite growth */
+      height: 400px;
+    }
+
+    .chart-card h3 {
+      margin-top: 0;
+      font-size: 1rem;
+      color: var(--text-main);
+      margin-bottom: 15px;
+      flex-shrink: 0;
+    }
+
+    /* CRITICAL: Canvas container must be relative and fill usage space without overflowing */
+    .chart-container {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+    }
+
+    /* Section Title */
+    .section-title {
+      font-size: 1.2rem;
+      color: var(--text-main);
+      margin: 40px 0 20px 0;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    th,
+    td {
+      padding: 10px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background: #f6f8fa;
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+    }
+
+    .table-container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 30px;
+      overflow-x: auto;
+      max-height: 500px;
+    }
+
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.9);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      font-size: 1.5rem;
+      color: var(--text-muted);
+    }
+
+    #error-msg {
+      color: #cf222e;
+      background: #ffebe9;
+      padding: 10px;
+      border-radius: 6px;
+      margin-top: 10px;
+      display: none;
+      font-size: 0.9rem;
+      border: 1px solid #ff818266;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="loading" class="loading-overlay">Loading Dashboard...</div>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="brand">
+      <svg viewBox="0 0 16 16">
+        <path fill-rule="evenodd"
+          d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z">
+        </path>
+      </svg>
+      <strong>GitHub Stats</strong>
+    </div>
+
+    <div class="filter-group">
+      <label>Capability</label>
+      <select id="filter-capability" multiple size="4"></select>
+    </div>
+
+    <div class="filter-group">
+      <label>Repository</label>
+      <select id="filter-repo" multiple size="6"></select>
+    </div>
+
+    <div class="filter-group">
+      <label>Date Range (Start)</label>
+      <input type="date" id="filter-start-date">
+    </div>
+    <div class="filter-group">
+      <label>Date Range (End)</label>
+      <input type="date" id="filter-end-date">
+    </div>
+
+    <button onclick="applyFilters()"
+      style="padding:10px; background:var(--primary); color:white; border:none; border-radius:6px; cursor:pointer; font-weight:600; width: 100%;">Apply
+      Filters</button>
+    <div class="filter-group">
+      <button id="btn-update" onclick="triggerUpdate()"
+        style="padding:10px; background:#0969da; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:600; width: 100%; margin-top: 10px;">
+        🔄 Update Data
+      </button>
+      <div id="update-status"
+        style="margin-top: 8px; font-size: 12px; color: #666; text-align: center; min-height: 1.2em;"></div>
+    </div>
+    <div id="error-msg"></div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="header">
+      <h1>Dashboard Overview</h1>
+      <div class="last-updated" id="last-updated">Last Run: -</div>
+    </div>
+
+    <!-- KPI Metrics -->
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-title">Total Repositories</div>
+        <div class="metric-value" id="kpi-repos">0</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-title">Total Commits (Latest)</div>
+        <div class="metric-value" id="kpi-commits">0</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-title">Total Merged PRs</div>
+        <div class="metric-value" id="kpi-prs">0</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-title">Active Committers (Unique)</div>
+        <div class="metric-value" id="kpi-devs">0</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-title">Active PR Authors (Unique)</div>
+        <div class="metric-value" id="kpi-pr-authors">0</div>
+      </div>
+    </div>
+
+    <!-- Row 1: Distributions -->
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>Repo Distribution by Capability</h3>
+        <div class="chart-container"><canvas id="chart-capability"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Infrastructure vs Application</h3>
+        <div class="chart-container"><canvas id="chart-type"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Verification Status</h3>
+        <div class="chart-container"><canvas id="chart-status"></canvas></div>
+      </div>
+    </div>
+
+    <h2 class="section-title">Development Activity</h2>
+
+    <!-- Row 2: Developer Stats -->
+    <div class="charts-grid">
+      <div class="chart-card" style="grid-column: span 2;">
+        <h3>Commits per Repository</h3>
+        <div class="chart-container"><canvas id="chart-commits-repo"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Committers vs PR Authors</h3>
+        <div class="chart-container"><canvas id="chart-devs"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Row 3: Advanced Metrics -->
+    <h2 class="section-title">Velocity & Quality</h2>
+    <div class="charts-grid">
+      <div class="chart-card" style="grid-column: span 2;">
+        <h3>Time Analysis: Coding vs Review</h3>
+        <div class="chart-container"><canvas id="chart-time"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Review Efficiency (Time vs LOC)</h3>
+        <div class="chart-container"><canvas id="chart-scatter"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Row 4: Trends -->
+    <h2 class="section-title">Historical Trends</h2>
+    <div class="charts-grid">
+      <div class="chart-card" style="grid-column: span 3;">
+        <h3>Commits Over Time</h3>
+        <div class="chart-container"><canvas id="chart-trend-commits"></canvas></div>
+      </div>
+      <div class="chart-card" style="grid-column: span 3;">
+        <h3>Merged PRs Over Time</h3>
+        <div class="chart-container"><canvas id="chart-trend-prs"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Tables -->
+    <h2 class="section-title">Detailed Data</h2>
+    <div class="table-container">
+      <table id="data-table">
+        <thead>
+          <tr>
+            <th>Repository</th>
+            <th>Capability</th>
+            <th>Commits</th>
+            <th>Merged PRs</th>
+            <th>Branch Dur (Hrs)</th>
+            <th>Review (Hrs)</th>
+            <th>Last Updated</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Logic -->
+  <script>
+    // Global Data
+    let historyData = [];
+    let filteredData = []; // This will hold the filtered rows (could be multiple per repo if date range)
+    let latestData = [];   // This will hold the LATEST snapshot per repo within filter
+
+    // Chart Instances
+    const chartInstances = {};
+
+    // Initialization
+    window.onload = async () => {
+      await loadData();
+      document.getElementById('loading').style.display = 'none';
+    };
+
+    async function loadData() {
+      try {
+        // We prefer history csv as it contains all data points
+        const res = await fetch('github_stats_history.csv');
+        if (!res.ok) throw new Error("Failed to load CSV: " + res.status);
+
+        const rawHistoryString = await res.text();
+        // Simple validation
+        if (!rawHistoryString || rawHistoryString.length < 10) throw new Error("CSV file is empty or invalid");
+
+        historyData = parseCSV(rawHistoryString);
+        console.log("Loaded " + historyData.length + " rows");
+
+        if (historyData.length === 0) {
+          showError("No data parsed from CSV. The file matches headers but has no rows?");
+          return;
+        }
+
+        // Parse numbers and clean columns
+        historyData.forEach(row => {
+          // Normalize empty strings to 0
+          row['Total Commits'] = parseInt(row['Total Commits']) || 0;
+          row['Total Merged PRs'] = parseInt(row['Total Merged PRs']) || 0;
+          row['Distinct Committers Count'] = parseInt(row['Distinct Committers Count']) || 0;
+          row['Distinct PR Authors Count'] = parseInt(row['Distinct PR Authors Count']) || 0;
+          row['Avg Branch Duration (Hours)'] = parseFloat(row['Avg Branch Duration (Hours)']) || 0;
+          row['Avg Review Time (Hours)'] = parseFloat(row['Avg Review Time (Hours)']) || 0;
+          row['Avg Coding Time (Hours)'] = parseFloat(row['Avg Coding Time (Hours)']) || 0;
+          row['Avg LOC Changed'] = parseFloat(row['Avg LOC Changed']) || 0;
+          row['Avg Review Time / LOC'] = parseFloat(row['Avg Review Time / LOC']) || 0;
+
+          // Date parsing for filter (handle missing timestamp with fallback)
+          if (row['Timestamp'] && row['Timestamp'].trim()) {
+            row._date = new Date(row['Timestamp']);
+            if (isNaN(row._date)) row._date = new Date(); // Fallback invalid date
+          } else {
+            row._date = new Date(); // Fallback missing date
+          }
+        });
+
+        initFilters();
+        applyFilters(); // Initial render
+      } catch (e) {
+        console.error("Load Error", e);
+        showError("Error loading data: " + e.message + ". Check console for details.");
+      }
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('error-msg');
+      el.innerText = msg;
+      el.style.display = 'block';
+    }
+
+    // CSV Parser - Robust to quoted fields
+    function parseCSV(text) {
+      const lines = text.trim().split(/\r?\n/);
+      // Filter empty lines
+      const cleanLines = lines.filter(l => l.trim().length > 0);
+      if (cleanLines.length < 2) return [];
+
+      const headers = parseLine(cleanLines[0]);
+      const res = [];
+
+      for (let i = 1; i < cleanLines.length; i++) {
+        const vals = parseLine(cleanLines[i]);
+        // Handle incomplete lines slightly gracefully
+        while (vals.length < headers.length) vals.push('');
+
+        const obj = {};
+        headers.forEach((h, idx) => obj[h.trim()] = vals[idx]); // trim headers
+        res.push(obj);
+      }
+      return res;
+    }
+
+    // Handles "value,with,commas", "value with "quotes"" etc
+    function parseLine(line) {
+      const vals = [];
+      let cur = '';
+      let inQ = false;
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (c === '"') {
+          // If next char is also quote, it's an escaped quote
+          if (inQ && line[i + 1] === '"') {
+            cur += '"';
+            i++; // Skip next quote
+          } else {
+            inQ = !inQ;
+          }
+        } else if (c === ',' && !inQ) {
+          vals.push(cur);
+          cur = '';
+        } else {
+          cur += c;
+        }
+      }
+      vals.push(cur);
+      return vals;
+    }
+
+    // Filters
+    function initFilters() {
+      // Capabilities
+      const caps = [...new Set(historyData.map(d => d.Capability).filter(x => x))].sort();
+      const capSel = document.getElementById('filter-capability');
+      capSel.innerHTML = '';
+      caps.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c; opt.text = c; opt.selected = true;
+        capSel.appendChild(opt);
+      });
+      if (caps.length === 0) {
+        const opt = document.createElement('option');
+        opt.text = "No Capabilities Found";
+        capSel.appendChild(opt);
+      }
+
+      // Repos
+      const repos = [...new Set(historyData.map(d => d.Repository).filter(x => x))].sort();
+      const repSel = document.getElementById('filter-repo');
+      repSel.innerHTML = '';
+      repos.forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r; opt.text = r; opt.selected = true;
+        repSel.appendChild(opt);
+      });
+      if (repos.length === 0) {
+        const opt = document.createElement('option');
+        opt.text = "No Repos Found";
+        repSel.appendChild(opt);
+      }
+
+
+      // Dates
+      // Filter invalid dates for Range
+      const dates = historyData.map(d => d._date).filter(d => !isNaN(d)).sort((a, b) => a - b);
+      if (dates.length > 0) {
+        // Format YYYY-MM-DD
+        const toInput = (d) => d.toISOString().split('T')[0];
+        document.getElementById('filter-start-date').value = toInput(dates[0]);
+        document.getElementById('filter-end-date').value = toInput(dates[dates.length - 1]);
+      } else {
+        const now = new Date().toISOString().split('T')[0];
+        document.getElementById('filter-start-date').value = now;
+        document.getElementById('filter-end-date').value = now;
+      }
+    }
+
+    function getSelectedValues(id) {
+      return Array.from(document.getElementById(id).selectedOptions).map(o => o.value);
+    }
+
+    function applyFilters() {
+      const selCaps = getSelectedValues('filter-capability');
+      const selRepos = getSelectedValues('filter-repo');
+      const startStr = document.getElementById('filter-start-date').value;
+      const endStr = document.getElementById('filter-end-date').value;
+
+      const start = startStr ? new Date(startStr) : new Date(0);
+      const end = endStr ? new Date(endStr) : new Date();
+      end.setHours(23, 59, 59, 999);
+
+      // Debug Logic
+      console.log("Filter Range:", start, "to", end);
+
+      // Filter Raw Data
+      filteredData = historyData.filter(d => {
+        const capMatch = selCaps.length === 0 || selCaps.includes(d.Capability || 'Unknown');
+        const repoMatch = selRepos.length === 0 || selRepos.includes(d.Repository);
+
+        let dateMatch = true;
+        if (!isNaN(d._date)) {
+          dateMatch = d._date >= start && d._date <= end;
+        }
+        return capMatch && repoMatch && dateMatch;
+      });
+
+      if (filteredData.length === 0 && historyData.length > 0) {
+        console.warn("Filters excluded all data");
+        showError("No data matches the selected filters.");
+      } else {
+        showError(""); // clear error
+      }
+
+      // Compute Latest Snapshot: Group by Repo, find max Date
+      const repoMap = {};
+      filteredData.forEach(d => {
+        if (!repoMap[d.Repository] || d._date > repoMap[d.Repository]._date) {
+          repoMap[d.Repository] = d;
+        }
+      });
+      latestData = Object.values(repoMap);
+
+      updateKPIs();
+      updateCharts();
+      updateTable();
+
+      // Last updated text
+      if (filteredData.length > 0) {
+        const maxDate = new Date(Math.max(...filteredData.map(d => d._date)));
+        document.getElementById('last-updated').innerText = "Last Updated: " + maxDate.toLocaleString();
+      } else {
+        document.getElementById('last-updated').innerText = "No Data Selected";
+      }
+    }
+
+    // Updates
+    function updateKPIs() {
+      document.getElementById('kpi-repos').innerText = latestData.length;
+      document.getElementById('kpi-commits').innerText = latestData.reduce((acc, d) => acc + d['Total Commits'], 0);
+      document.getElementById('kpi-prs').innerText = latestData.reduce((acc, d) => acc + d['Total Merged PRs'], 0);
+
+      // Calculate Unique Developers across all visible repos
+      const uniqueCommitters = new Set();
+      const uniquePRAuthors = new Set();
+      let fallbackCommitters = 0;
+      let fallbackAuthors = 0;
+
+      latestData.forEach(d => {
+        // Parse Comma Separated Lists
+        let hasCommitters = false;
+        if (d['Distinct Committers List']) {
+          const list = d['Distinct Committers List'];
+          // Handle case where list might be wrapped in quotes or have extra whitespace
+          const names = list.replace(/^"|"$/g, '').split(',');
+          names.forEach(name => {
+            const trimmed = name.trim();
+            if (trimmed && trimmed.length > 0) {
+              uniqueCommitters.add(trimmed);
+              hasCommitters = true;
+            }
+          });
+        }
+        if (!hasCommitters) {
+          fallbackCommitters += (parseInt(d['Distinct Committers Count']) || 0);
+        }
+
+        let hasAuthors = false;
+        if (d['Distinct PR Authors List']) {
+          const list = d['Distinct PR Authors List'];
+          const names = list.replace(/^"|"$/g, '').split(',');
+          names.forEach(name => {
+            const trimmed = name.trim();
+            if (trimmed && trimmed.length > 0) {
+              uniquePRAuthors.add(trimmed);
+              hasAuthors = true;
+            }
+          });
+        }
+        if (!hasAuthors) {
+          fallbackAuthors += (parseInt(d['Distinct PR Authors Count']) || 0);
+        }
+      });
+
+      document.getElementById('kpi-devs').innerText = uniqueCommitters.size + fallbackCommitters;
+      document.getElementById('kpi-pr-authors').innerText = uniquePRAuthors.size + fallbackAuthors;
+    }
+
+    function updateCharts() {
+      // Colors
+      const colors = ['#2da44e', '#0969da', '#cf222e', '#f8c555', '#6e5494', '#d29922', '#8b949e'];
+
+      // 1. Capability (Pie)
+      const capCount = {};
+      latestData.forEach(d => { capCount[d.Capability] = (capCount[d.Capability] || 0) + 1; });
+      renderChart('chart-capability', 'doughnut', Object.keys(capCount), [{ data: Object.values(capCount), backgroundColor: colors }]);
+
+      // 2. Type (Pie)
+      const typeCount = {};
+      latestData.forEach(d => { typeCount[d['Repo Type']] = (typeCount[d['Repo Type']] || 0) + 1; });
+      renderChart('chart-type', 'pie', Object.keys(typeCount), [{ data: Object.values(typeCount), backgroundColor: ['#f8c555', '#0969da'] }]);
+
+      // 3. Status (Bar)
+      const statCount = {};
+      latestData.forEach(d => { statCount[d['Verification Status']] = (statCount[d['Verification Status']] || 0) + 1; });
+      renderChart('chart-status', 'bar', Object.keys(statCount), [{ label: 'Status', data: Object.values(statCount), backgroundColor: '#2da44e' }]);
+
+      // 4. Commits per Repo (Bar)
+      const sortedCommits = [...latestData].sort((a, b) => b['Total Commits'] - a['Total Commits']);
+      renderChart('chart-commits-repo', 'bar', sortedCommits.map(d => d.Repository), [{
+        label: 'Total Commits',
+        data: sortedCommits.map(d => d['Total Commits']),
+        backgroundColor: '#0969da'
+      }]);
+
+      // 5. Devs vs Authors (Grouped Bar)
+      renderChart('chart-devs', 'bar', latestData.map(d => d.Repository), [
+        { label: 'Committers', data: latestData.map(d => d['Distinct Committers Count']), backgroundColor: '#2da44e' },
+        { label: 'PR Authors', data: latestData.map(d => d['Distinct PR Authors Count']), backgroundColor: '#cf222e' }
+      ]);
+
+      // 6. Time Analysis (Stacked)
+      renderChart('chart-time', 'bar', latestData.map(d => d.Repository), [
+        { label: 'Coding Time (Hr)', data: latestData.map(d => d['Avg Coding Time (Hours)']), backgroundColor: '#0969da', stack: 'Stack 0' },
+        { label: 'Review Time (Hr)', data: latestData.map(d => d['Avg Review Time (Hours)']), backgroundColor: '#f8c555', stack: 'Stack 0' }
+      ]);
+
+      // 7. Scatter (Review vs LOC)
+      const scatterData = latestData.map(d => ({
+        x: d['Avg LOC Changed'] || 0,
+        y: d['Avg Review Time (Hours)'] || 0,
+        r: Math.min(20, Math.max(5, (d['Avg Review Time / LOC'] * 100))) // Radius based on efficiency
+      })).filter(d => d.x > 0 || d.y > 0);
+
+      // ChartJS Scatter needs destroy
+      const ctxScatter = document.getElementById('chart-scatter');
+      if (ctxScatter) {
+        if (chartInstances['chart-scatter']) chartInstances['chart-scatter'].destroy();
+        chartInstances['chart-scatter'] = new Chart(ctxScatter, {
+          type: 'bubble',
+          data: {
+            datasets: [{
+              label: 'Review Time vs LOC',
+              data: scatterData,
+              backgroundColor: 'rgba(255, 99, 132, 0.6)'
+            }]
+          },
+          options: {
+            maintainAspectRatio: false,
+            responsive: true,
+            scales: {
+              x: { title: { display: true, text: 'Avg LOC Changed' } },
+              y: { title: { display: true, text: 'Avg Review Hrs' } }
+            }
+          }
+        });
+      }
+
+      // 8. Trends (Line)
+      const uniqueDates = [...new Set(filteredData.map(d => d.Timestamp))].sort();
+      const repos = [...new Set(filteredData.map(d => d.Repository))];
+
+      const createTrendDatasets = (metric) => {
+        return repos.map((repo, idx) => {
+          const dataMap = {};
+          filteredData.filter(d => d.Repository === repo).forEach(d => dataMap[d.Timestamp] = d[metric]);
+          const data = uniqueDates.map(date => dataMap[date] === undefined ? null : dataMap[date]);
+          return {
+            label: repo,
+            data: data,
+            borderColor: colors[idx % colors.length],
+            fill: false,
+            tension: 0.2
+          };
+        });
+      };
+
+      renderChart('chart-trend-commits', 'line', uniqueDates.map(d => d.substring(0, 10)), createTrendDatasets('Total Commits'));
+      renderChart('chart-trend-prs', 'line', uniqueDates.map(d => d.substring(0, 10)), createTrendDatasets('Total Merged PRs'));
+    }
+
+    function renderChart(id, type, labels, datasets) {
+      const ctx = document.getElementById(id);
+      if (!ctx) return;
+
+      if (chartInstances[id]) chartInstances[id].destroy();
+
+      chartInstances[id] = new Chart(ctx, {
+        type: type,
+        data: { labels: labels, datasets: datasets },
+        options: {
+          maintainAspectRatio: false, // Critical for fixed height
+          responsive: true,
+          plugins: { legend: { position: 'bottom' } },
+          scales: { y: { beginAtZero: true } }
+        }
+      });
+    }
+
+    function updateTable() {
+      const tbody = document.querySelector('#data-table tbody');
+      tbody.innerHTML = '';
+      latestData.forEach(d => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+                    <td><strong>${d.Repository}</strong></td>
+                    <td>${d.Capability}</td>
+                    <td>${d['Total Commits']}</td>
+                    <td>${d['Total Merged PRs']}</td>
+                    <td>${d['Avg Branch Duration (Hours)'].toFixed(1)}</td>
+                    <td>${d['Avg Review Time (Hours)'].toFixed(1)}</td>
+                    <td>${d._date.toLocaleString()}</td>
+                `;
+        tbody.appendChild(tr);
+      });
+    }
+    async function triggerUpdate() {
+      const btn = document.getElementById('btn-update');
+      const statusDiv = document.getElementById('update-status');
+      const originalText = btn.innerText;
+
+      btn.disabled = true;
+      btn.innerText = "⏳ Updating...";
+      if (statusDiv) {
+        statusDiv.innerText = "Job sent. Waiting for response...";
+        statusDiv.style.color = "#666";
+      }
+
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+      try {
+        if (isLocal) {
+          // Local Mode: Call Internal API
+          if (statusDiv) statusDiv.innerText = "Running 'node index.js'...";
+          const res = await fetch('/api/trigger-update', {
+            method: 'POST'
+          });
+          const data = await res.json();
+          if (data.success) {
+            if (statusDiv) {
+              statusDiv.innerText = "Success! Reloading...";
+              statusDiv.style.color = "green";
+            }
+            setTimeout(() => window.location.reload(), 1000);
+          } else {
+            throw new Error(data.error || "Unknown server error");
+          }
+        } else {
+          // GitHub Pages Mode: Trigger Workflow
+          const token = prompt("Enter GitHub PAT (repo scope) to trigger update:");
+          if (!token) {
+            btn.disabled = false;
+            btn.innerText = originalText;
+            if (statusDiv) statusDiv.innerText = "";
+            return;
+          }
+
+          if (statusDiv) statusDiv.innerText = "Triggering GitHub Action...";
+
+          let owner, repo;
+          const pathParts = window.location.pathname.split('/').filter(p => p);
+          const hostParts = window.location.hostname.split('.');
+
+          if (hostParts.length === 3 && hostParts[1] === 'github' && hostParts[2] === 'io') {
+            owner = hostParts[0];
+            repo = pathParts[0] || '';
+          }
+
+          if (!owner || !repo) {
+            const repoInput = prompt("Could not detect repo. Enter 'owner/repo':", "bdchang/GithubStats");
+            if (!repoInput) throw new Error("Repo required");
+            [owner, repo] = repoInput.split('/');
+          }
+
+          const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/update_stats.yml/dispatches`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `token ${token}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              ref: 'main'
+            }) // Assuming main branch
+          });
+
+          if (response.ok) {
+            if (statusDiv) {
+              statusDiv.innerText = "Workflow Triggered! Data will update in ~2 mins.";
+              statusDiv.style.color = "green";
+            }
+            alert("Workflow triggered! It may take a few minutes for new data to appear. Refresh manually later.");
+          } else {
+            const errText = await response.text();
+            throw new Error(`GitHub API Error: ${response.status} ${errText}`);
+          }
+        }
+      } catch (e) {
+        console.error(e);
+        if (statusDiv) {
+          statusDiv.innerText = "Error: " + e.message;
+          statusDiv.style.color = "red";
+        }
+        alert("Error: " + e.message);
+      } finally {
+        if (statusDiv && statusDiv.style.color !== "green") {
+          btn.disabled = false;
+          btn.innerText = originalText;
+        }
+      }
+    }
+  </script>
+</body>
+
+</html>

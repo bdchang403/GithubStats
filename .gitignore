@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+
+# Environment Variables (Keep secrets out of git!)
+config/.env
+.env
+
+# Data Output
+github_stats_history_backup.csv
+
+# IDE
+.vscode/
+.idea/

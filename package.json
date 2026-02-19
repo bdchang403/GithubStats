@@ -1,0 +1,17 @@
+{
+  "name": "githubstats",
+  "version": "1.0.0",
+  "description": "A static, serverless dashboard for visualizing GitHub repository metrics (commits, PRs, velocity, quality).  Built with **HTML/JS** and powered by **GitHub Actions**.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "csv-parse": "^6.1.0",
+    "simple-git": "^3.31.1"
+  }
+}

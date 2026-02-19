@@ -1,0 +1,40 @@
+name: Update GitHub Stats
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-stats:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run Data Fetch Script
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Fetching latest GitHub stats..."
+          node index.js
+
+      - name: Commit and Push Changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Check if there are changes to commit
+          if git diff --quiet github_stats_output.csv github_stats_history.csv; then
+            echo "No changes to commit."
+          else
+            git add github_stats_output.csv github_stats_history.csv github_activity_log.csv || true
+            git commit -m "Update GitHub Stats data [skip ci]"
+            git push
+          fi

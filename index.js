@@ -220,7 +220,10 @@ async function processRepo(repoName, capability, prevState) {
         }
 
         commits.forEach(c => {
-            const author = c.commit.author.name || "Unknown";
+            // Per user request: Use Email if available, else Name
+            const authorName = c.commit.author.name || "Unknown";
+            const authorEmail = c.commit.author.email;
+            const author = authorEmail || authorName;
             committers.add(author);
 
             // Log Commit
@@ -284,7 +287,12 @@ async function processRepo(repoName, capability, prevState) {
             const prDetail = await fetchGitHub(`${API_BASE_URL}/repos/${repoName}/pulls/${prNum}`);
             if (!prDetail) continue;
 
-            const author = item.user ? item.user.login : "Unknown";
+            // Try to get email, fallback to login
+            let author = "Unknown";
+            if (prDetail.user) {
+                // Note: user.email is often null unless authenticated with correct scopes/permission
+                author = prDetail.user.email || prDetail.user.login;
+            }
             prAuthors.add(author);
 
             if (isMerged) stats["Total Merged PRs"]++;
@@ -374,12 +382,20 @@ async function processRepo(repoName, capability, prevState) {
                 runEnv = stats["Environment"] !== "Unknown" ? stats["Environment"] : getEnvironment(run.head_branch);
             }
 
+            // User: Try Head Commit Email, else Triggering Actor Login
+            let runUser = "Unknown";
+            if (run.head_commit && run.head_commit.author && run.head_commit.author.email) {
+                runUser = run.head_commit.author.email;
+            } else if (run.triggering_actor) {
+                runUser = run.triggering_actor.login;
+            }
+
             logs.push({
                 Timestamp: new Date().toISOString(),
                 Repository: repoName,
                 Capability: capability,
                 Action: `Workflow Run (${outcome})`,
-                User: run.triggering_actor ? run.triggering_actor.login : "Unknown",
+                User: runUser,
                 Date: run.created_at,
                 Environment: runEnv,
                 "Cross-Ref ID": extractCrossRefID(run.display_title),

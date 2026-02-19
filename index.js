@@ -1,7 +1,6 @@
 const fs = require('fs');
 const https = require('https');
 const path = require('path');
-const readline = require('readline');
 
 // --- Configuration ---
 const CONFIG_path = path.join(__dirname, 'config', '.env');
@@ -134,6 +133,38 @@ function extractAssociatedPR(message) {
     return null;
 }
 
+async function fetchCICDConfig(repoName) {
+    try {
+        const url = `${API_BASE_URL}/repos/${repoName}/contents/CICD.yml`;
+        const data = await fetchGitHub(url);
+        if (data && data.content) {
+            const content = Buffer.from(data.content, 'base64').toString('utf-8');
+            console.log(`  Found CICD.yml in ${repoName}`);
+
+            // Simple parser for boolean flags
+            const lines = content.split('\n');
+            for (const line of lines) {
+                const match = line.match(/^\s*([a-zA-Z0-9_-]+)\s*:\s*(true|false)/i);
+                if (match) {
+                    const key = match[1].toLowerCase();
+                    const val = match[2].toLowerCase() === 'true';
+
+                    if (val) {
+                        if (['prod', 'production', 'release'].includes(key)) return "Production";
+                        if (['sit', 'staging', 'test'].includes(key)) return "SIT";
+                        if (['dev', 'develop'].includes(key)) return "Development";
+                        if (['pat', 'uat', 'pre-prod'].includes(key)) return "PAT";
+                        if (['trust', 'trusted'].includes(key)) return "Trusted";
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        // Ignore errors
+    }
+    return null;
+}
+
 async function processRepo(repoName, capability, prevState) {
     console.log(`Processing ${repoName}...`);
     const stats = {
@@ -149,6 +180,7 @@ async function processRepo(repoName, capability, prevState) {
         "Distinct Committers List": "",
         "Distinct PR Authors List": "",
         "Repo Type": "Unknown",
+        "Environment": "Unknown", // New Field
         "Verification Status": "OK",
         "Timestamp Verification": "New Repository",
         // Metrics
@@ -158,6 +190,14 @@ async function processRepo(repoName, capability, prevState) {
         "Avg LOC Changed": 0,
         "Avg Review Time / LOC": 0
     };
+
+    // Scan CICD.yml for Environment
+    const edpEnv = await fetchCICDConfig(repoName);
+    if (edpEnv) {
+        stats["Environment"] = edpEnv;
+    } else if (prevState && prevState["Environment"]) {
+        stats["Environment"] = prevState["Environment"];
+    }
 
     const logs = [];
 
@@ -192,7 +232,7 @@ async function processRepo(repoName, capability, prevState) {
                 Action: "Commit",
                 User: author,
                 Date: c.commit.committer.date,
-                Environment: "Unknown", // Usually inferred from branch, but commit API doesn't give branch easily w/o ref
+                Environment: stats["Environment"] !== "Unknown" ? stats["Environment"] : getEnvironment("Unknown"),
                 "Cross-Ref ID": crossRef,
                 "Associated PR": assocPR,
                 ID: c.sha.substring(0, 7),
@@ -228,19 +268,17 @@ async function processRepo(repoName, capability, prevState) {
     const metrics_accum = { duration: 0, review: 0, loc: 0, count: 0 };
 
     if (prs && prs.items) {
-        // Update Last PR Date from newest item
         if (prs.items.length > 0) {
             stats["Last PR Date"] = prs.items[0].closed_at;
         }
 
         for (const item of prs.items) {
-            if (lastPRDate && item.closed_at <= lastPRDate) continue; // Skip old overlap
+            if (lastPRDate && item.closed_at <= lastPRDate) continue;
 
             const prNum = item.number;
             const isMerged = item.pull_request && item.pull_request.merged_at;
             const action = isMerged ? "Merge (PR)" : "Close (PR - Unmerged)";
 
-            // Detailed PR info
             const prDetail = await fetchGitHub(`${API_BASE_URL}/repos/${repoName}/pulls/${prNum}`);
             if (!prDetail) continue;
 
@@ -249,26 +287,17 @@ async function processRepo(repoName, capability, prevState) {
 
             if (isMerged) stats["Total Merged PRs"]++;
 
-            // Metrics Calculation
             const createdAt = new Date(prDetail.created_at);
             const closedAt = new Date(prDetail.closed_at);
-            const mergedAt = prDetail.merged_at ? new Date(prDetail.merged_at) : null;
 
-            // Branch Duration (First commit to Merge) - approximated by PR creation to merge for now if commits not fetched
-            // Python script did Created -> Merged
             let durationHours = 0;
             if (closedAt > createdAt) {
                 durationHours = (closedAt - createdAt) / (1000 * 3600);
             }
 
-            // Coding Time (First Commit to Open) - requires commits fetch
-
-            // Review Time (Open to Merge)
-            let reviewHours = durationHours; // Default to full duration if no better data
-
+            let reviewHours = durationHours;
             const loc = (prDetail.additions || 0) + (prDetail.deletions || 0);
 
-            // Accumulate for averages (only merged PRs usually count for 'velocity', but we'll include closed for some metrics)
             if (isMerged) {
                 metrics_accum.duration += durationHours;
                 metrics_accum.review += reviewHours;
@@ -283,7 +312,7 @@ async function processRepo(repoName, capability, prevState) {
                 Action: action,
                 User: author,
                 Date: item.closed_at,
-                Environment: getEnvironment(prDetail.base.ref),
+                Environment: stats["Environment"] !== "Unknown" ? stats["Environment"] : getEnvironment(prDetail.base.ref),
                 "Cross-Ref ID": extractCrossRefID(item.title),
                 "Associated PR": `PR #${prNum}`,
                 ID: `PR #${prNum}`,
@@ -297,7 +326,6 @@ async function processRepo(repoName, capability, prevState) {
         }
     }
 
-    // Merge prev PR authors
     if (prevState && prevState["Distinct PR Authors List"]) {
         prevState["Distinct PR Authors List"].split(', ').forEach(a => {
             if (a) prAuthors.add(a);
@@ -306,7 +334,6 @@ async function processRepo(repoName, capability, prevState) {
     stats["Distinct PR Authors Count"] = prAuthors.size;
     stats["Distinct PR Authors List"] = Array.from(prAuthors).sort().join(", ");
 
-    // Metrics Finalization
     if (metrics_accum.count > 0) {
         const cnt = metrics_accum.count;
         stats["Avg Branch Duration (Hours)"] = (metrics_accum.duration / cnt).toFixed(2);
@@ -315,10 +342,8 @@ async function processRepo(repoName, capability, prevState) {
         if (stats["Avg LOC Changed"] > 0) {
             stats["Avg Review Time / LOC"] = (stats["Avg Review Time (Hours)"] / stats["Avg LOC Changed"]).toFixed(4);
         }
-        // Simplified Coding Time impl
         stats["Avg Coding Time (Hours)"] = Math.max(0, stats["Avg Branch Duration (Hours)"] - stats["Avg Review Time (Hours)"]).toFixed(2);
     } else if (prevState) {
-        // Carry forward
         stats["Avg Branch Duration (Hours)"] = prevState["Avg Branch Duration (Hours)"] || 0;
         stats["Avg Review Time (Hours)"] = prevState["Avg Review Time (Hours)"] || 0;
         stats["Avg Coding Time (Hours)"] = prevState["Avg Coding Time (Hours)"] || 0;
@@ -329,7 +354,6 @@ async function processRepo(repoName, capability, prevState) {
 
     // 3. Workflow Runs
     let lastRunDate = prevState ? prevState["Last Workflow Date"] : null;
-    // Note: API filtering for runs created > date is tricky, defaulting to fetching latest
     const runs = await fetchGitHub(`${API_BASE_URL}/repos/${repoName}/actions/runs?per_page=5&sort=created_at&direction=desc`);
     if (runs && runs.workflow_runs && runs.workflow_runs.length > 0) {
         stats["Last Workflow Date"] = runs.workflow_runs[0].created_at;
@@ -345,7 +369,7 @@ async function processRepo(repoName, capability, prevState) {
                 Action: `Workflow Run (${outcome})`,
                 User: run.triggering_actor ? run.triggering_actor.login : "Unknown",
                 Date: run.created_at,
-                Environment: getEnvironment(run.head_branch),
+                Environment: stats["Environment"] !== "Unknown" ? stats["Environment"] : getEnvironment(run.head_branch),
                 "Cross-Ref ID": extractCrossRefID(run.display_title),
                 "Associated PR": extractAssociatedPR(run.display_title),
                 ID: `Run #${run.id}`,
@@ -403,8 +427,14 @@ async function main() {
     // Load History
     const history = {};
     if (fs.existsSync('github_stats_history.csv')) {
-        const histData = parseCSV(fs.readFileSync('github_stats_history.csv', 'utf-8'));
-        // Sort by timestamp desc and dedup
+        const histContent = fs.readFileSync('github_stats_history.csv', 'utf-8');
+        let histData = parseCSV(histContent);
+
+        if (histData.length > 0 && !Object.keys(histData[0]).includes('Environment')) {
+            console.log("Migrating schema: Adding Environment column...");
+            histData = histData.map(row => ({ ...row, Environment: 'Unknown' }));
+        }
+
         histData.sort((a, b) => new Date(b.Timestamp) - new Date(a.Timestamp));
         histData.forEach(row => {
             if (row.Repository && !history[row.Repository]) {
@@ -430,7 +460,6 @@ async function main() {
         }
     }
 
-    // Add Timestamp to results
     const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
     results.forEach(r => r.Timestamp = timestamp);
 
@@ -440,7 +469,7 @@ async function main() {
         'Distinct Committers Count', 'Distinct PR Authors Count',
         'Last Commit Date', 'Last PR Date', 'Last Workflow Date',
         'Avg Branch Duration (Hours)', 'Avg Coding Time (Hours)', 'Avg Review Time (Hours)', 'Avg LOC Changed', 'Avg Review Time / LOC',
-        'Distinct Committers List', 'Distinct PR Authors List', 'Timestamp'];
+        'Distinct Committers List', 'Distinct PR Authors List', 'Environment', 'Timestamp'];
 
     const csvContent = [cols.join(',')].concat(results.map(r => {
         return cols.map(c => {
@@ -456,23 +485,54 @@ async function main() {
     console.log("Saved github_stats_output.csv");
 
     // Append History
-    let historyContent = csvContent.split('\n').slice(1).join('\n'); // Remove header
-    if (!fs.existsSync('github_stats_history.csv')) {
-        fs.writeFileSync('github_stats_history.csv', csvContent); // Write with header
+    let append = true;
+    if (fs.existsSync('github_stats_history.csv')) {
+        const firstLine = fs.readFileSync('github_stats_history.csv', 'utf-8').split('\n')[0];
+        if (!firstLine.includes('Environment')) {
+            append = false;
+        }
     } else {
-        // Ensure newline
+        append = false; // New file
+    }
+
+    if (!append) {
+        if (fs.existsSync('github_stats_history.csv')) {
+            const oldContent = fs.readFileSync('github_stats_history.csv', 'utf-8');
+            const oldData = parseCSV(oldContent);
+            const migratedOldData = oldData.map(r => {
+                r.Environment = r.Environment || 'Unknown';
+                return r;
+            });
+
+            const fullData = migratedOldData.concat(results);
+
+            const fullContent = [cols.join(',')].concat(fullData.map(r => {
+                return cols.map(c => {
+                    const val = r[c] === null || r[c] === undefined ? '' : String(r[c]);
+                    if (val.includes(',') || val.includes('"')) return `"${val.replace(/"/g, '""')}"`;
+                    return val;
+                }).join(',');
+            })).join('\n');
+
+            fs.writeFileSync('github_stats_history.csv', fullContent);
+            console.log("Migrated and updated github_stats_history.csv");
+        } else {
+            fs.writeFileSync('github_stats_history.csv', csvContent);
+            console.log("Created github_stats_history.csv");
+        }
+    } else {
+        let historyContent = csvContent.split('\n').slice(1).join('\n');
         const currentHist = fs.readFileSync('github_stats_history.csv', 'utf-8');
         if (currentHist && !currentHist.endsWith('\n')) fs.appendFileSync('github_stats_history.csv', '\n');
         fs.appendFileSync('github_stats_history.csv', historyContent);
+        console.log("Appended to github_stats_history.csv");
     }
-    console.log("Appended to github_stats_history.csv");
 
     // Save Logs
     if (allLogs.length > 0) {
         const logCols = ['Timestamp', 'Repository', 'Capability', 'Action', 'User', 'Date', 'Environment', 'Cross-Ref ID', 'Associated PR', 'ID', 'Message',
             'Branch Duration (Hours)', 'Review Time (Hours)', 'LOC Changed', 'PR Size (Commits)', 'Target Branch'];
 
-        // Add timestamp to logs
         allLogs.forEach(l => l.Timestamp = timestamp);
 
         const logContent = allLogs.map(r => {

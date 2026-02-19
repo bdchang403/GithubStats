@@ -44,12 +44,12 @@ cd GithubStats
 2. Add your GitHub Token and (optional) Enterprise API URL:
    ```ini
    GITHUB_TOKEN=your_personal_access_token
-   # Optional: For Enterprise GitHub Server (Self-Hosted)
-   # If your URL is https://github.company.com, set this to:
-   GITHUB_API_BASE_URL=https://github.company.com/api/v3
    
-   # NOTE: If you use GitHub Enterprise Cloud (https://github.com/company), 
-   # you likely do NOT need to set this (defaults to api.github.com).
+   # NOTE: For GitHub Enterprise Cloud (https://github.com/your-company), 
+   # you do NOT need to set GITHUB_API_BASE_URL. It defaults to api.github.com.
+
+   # Optional: Only for Enterprise Server (Self-Hosted):
+   # GITHUB_API_BASE_URL=https://github.company.com/api/v3
 
    # Optional: Comma-separated list of repos (owner/name)
    INPUT_REPOS=facebook/react,vuejs/vue 

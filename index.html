@@ -446,7 +446,12 @@
 
           // Date parsing for filter (handle missing timestamp with fallback)
           if (row['Timestamp'] && row['Timestamp'].trim()) {
-            row._date = new Date(row['Timestamp']);
+            // Force UTC parsing for "YYYY-MM-DD HH:mm:ss" format
+            let tsStr = row['Timestamp'].trim();
+            if (tsStr.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
+              tsStr = tsStr.replace(' ', 'T') + 'Z';
+            }
+            row._date = new Date(tsStr);
             if (isNaN(row._date)) row._date = new Date(); // Fallback invalid date
           } else {
             row._date = new Date(); // Fallback missing date

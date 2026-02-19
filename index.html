@@ -749,6 +749,54 @@
       }
 
       // 8. Trends (Line)
+      // Force X-Axis to match selected range
+      const startDateStr = document.getElementById('filter-start-date').value;
+      const endDateStr = document.getElementById('filter-end-date').value;
+
+      const distinctRepos = [...new Set(filteredData.map(d => d.Repository))];
+
+      // Generate full date range labels
+      const dateLabels = [];
+      let curDate = new Date(startDateStr + 'T00:00:00'); // Force local midnight to avoid timezone shifts
+      const stopDate = new Date(endDateStr + 'T00:00:00');
+
+      // Safety: Limit range generation
+      const maxDays = 365 * 5;
+      let dayCount = 0;
+
+      while (curDate <= stopDate && dayCount < maxDays) {
+        dateLabels.push(curDate.toISOString().split('T')[0]); // YYYY-MM-DD
+        curDate.setDate(curDate.getDate() + 1);
+        dayCount++;
+      }
+
+      const createTrendDatasets = (metric) => {
+        return distinctRepos.map((repo, idx) => {
+          // Build lookup map for this repo's data
+          const dataMap = {};
+          filteredData.filter(d => d.Repository === repo).forEach(d => {
+            // d.Timestamp is YYYY-MM-DD HH:mm:ss. Convert to YYYY-MM-DD key
+            const key = d.Timestamp.split(' ')[0];
+            dataMap[key] = d[metric];
+          });
+
+          // Map to full date range
+          const data = dateLabels.map(date => dataMap[date] === undefined ? null : dataMap[date]);
+
+          return {
+            label: repo,
+            data: data,
+            borderColor: colors[idx % colors.length],
+            fill: false,
+            tension: 0.2,
+            spanGaps: true
+          };
+        });
+      };
+
+      // Use dateLabels for X-axis
+      renderChart('chart-trend-commits', 'line', dateLabels, createTrendDatasets('Total Commits'));
+      renderChart('chart-trend-prs', 'line', dateLabels, createTrendDatasets('Total Merged PRs'));
     }
 
     function renderChart(id, type, labels, datasets) {

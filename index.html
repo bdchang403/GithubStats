@@ -749,26 +749,6 @@
       }
 
       // 8. Trends (Line)
-      const uniqueDates = [...new Set(filteredData.map(d => d.Timestamp))].sort();
-      const repos = [...new Set(filteredData.map(d => d.Repository))];
-
-      const createTrendDatasets = (metric) => {
-        return repos.map((repo, idx) => {
-          const dataMap = {};
-          filteredData.filter(d => d.Repository === repo).forEach(d => dataMap[d.Timestamp] = d[metric]);
-          const data = uniqueDates.map(date => dataMap[date] === undefined ? null : dataMap[date]);
-          return {
-            label: repo,
-            data: data,
-            borderColor: colors[idx % colors.length],
-            fill: false,
-            tension: 0.2
-          };
-        });
-      };
-
-      renderChart('chart-trend-commits', 'line', uniqueDates.map(d => d.substring(0, 10)), createTrendDatasets('Total Commits'));
-      renderChart('chart-trend-prs', 'line', uniqueDates.map(d => d.substring(0, 10)), createTrendDatasets('Total Merged PRs'));
     }
 
     function renderChart(id, type, labels, datasets) {
@@ -781,10 +761,15 @@
         type: type,
         data: { labels: labels, datasets: datasets },
         options: {
-          maintainAspectRatio: false, // Critical for fixed height
+          maintainAspectRatio: false,
           responsive: true,
           plugins: { legend: { position: 'bottom' } },
-          scales: { y: { beginAtZero: true } }
+          scales: {
+            y: { beginAtZero: true },
+            x: {
+              ticks: { autoSkip: true, maxTicksLimit: 10 }
+            }
+          }
         }
       });
     }

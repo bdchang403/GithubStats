@@ -133,13 +133,15 @@ function extractAssociatedPR(message) {
     return null;
 }
 
-async function fetchCICDConfig(repoName) {
+async function fetchCICDConfig(repoName, sha = null) {
     try {
-        const url = `${API_BASE_URL}/repos/${repoName}/contents/CICD.yml`;
+        let url = `${API_BASE_URL}/repos/${repoName}/contents/CICD.yml`;
+        if (sha) url += `?ref=${sha}`;
+
         const data = await fetchGitHub(url);
         if (data && data.content) {
             const content = Buffer.from(data.content, 'base64').toString('utf-8');
-            console.log(`  Found CICD.yml in ${repoName}`);
+            if (!sha) console.log(`  Found CICD.yml in ${repoName}`);
 
             // Simple parser for boolean flags
             const lines = content.split('\n');
@@ -191,7 +193,7 @@ async function processRepo(repoName, capability, prevState) {
         "Avg Review Time / LOC": 0
     };
 
-    // Scan CICD.yml for Environment
+    // Scan CICD.yml for Environment (HEAD)
     const edpEnv = await fetchCICDConfig(repoName);
     if (edpEnv) {
         stats["Environment"] = edpEnv;
@@ -358,10 +360,20 @@ async function processRepo(repoName, capability, prevState) {
     if (runs && runs.workflow_runs && runs.workflow_runs.length > 0) {
         stats["Last Workflow Date"] = runs.workflow_runs[0].created_at;
 
-        runs.workflow_runs.forEach(run => {
-            if (lastRunDate && run.created_at <= lastRunDate) return;
+        for (const run of runs.workflow_runs) {
+            if (lastRunDate && run.created_at <= lastRunDate) continue;
 
             const outcome = run.conclusion || run.status;
+
+            // Get Environment from CICD.yml at that SHA
+            let runEnv = "Unknown";
+            if (run.head_sha) {
+                runEnv = await fetchCICDConfig(repoName, run.head_sha);
+            }
+            if (!runEnv || runEnv === "Unknown") {
+                runEnv = stats["Environment"] !== "Unknown" ? stats["Environment"] : getEnvironment(run.head_branch);
+            }
+
             logs.push({
                 Timestamp: new Date().toISOString(),
                 Repository: repoName,
@@ -369,7 +381,7 @@ async function processRepo(repoName, capability, prevState) {
                 Action: `Workflow Run (${outcome})`,
                 User: run.triggering_actor ? run.triggering_actor.login : "Unknown",
                 Date: run.created_at,
-                Environment: stats["Environment"] !== "Unknown" ? stats["Environment"] : getEnvironment(run.head_branch),
+                Environment: runEnv,
                 "Cross-Ref ID": extractCrossRefID(run.display_title),
                 "Associated PR": extractAssociatedPR(run.display_title),
                 ID: `Run #${run.id}`,
@@ -380,7 +392,7 @@ async function processRepo(repoName, capability, prevState) {
                 "PR Size (Commits)": null,
                 "Target Branch": run.head_branch
             });
-        });
+        }
     } else if (prevState && !stats["Last Workflow Date"]) {
         stats["Last Workflow Date"] = prevState["Last Workflow Date"];
     }

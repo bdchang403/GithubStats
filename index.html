@@ -401,8 +401,10 @@
   <script>
     // Global Data
     let historyData = [];
-    let filteredData = []; // This will hold the filtered rows (could be multiple per repo if date range)
-    let latestData = [];   // This will hold the LATEST snapshot per repo within filter
+    let activityData = []; // New: Full event log
+    let filteredData = []; // History filtered
+    let filteredActivityData = []; // Activity filtered
+    let latestData = [];   // Latest snapshot
 
     // Chart Instances
     const chartInstances = {};
@@ -415,23 +417,30 @@
 
     async function loadData() {
       try {
-        // We prefer history csv as it contains all data points
-        const res = await fetch('github_stats_history.csv');
-        if (!res.ok) throw new Error("Failed to load CSV: " + res.status);
+        // Fetch both History (Snapshots) and Activity (Events)
+        const [histRes, actRes] = await Promise.all([
+          fetch('github_stats_history.csv'),
+          fetch('github_activity_log.csv')
+        ]);
 
-        const rawHistoryString = await res.text();
-        // Simple validation
-        if (!rawHistoryString || rawHistoryString.length < 10) throw new Error("CSV file is empty or invalid");
+        if (!histRes.ok) throw new Error("Failed to load History CSV: " + histRes.status);
 
-        historyData = parseCSV(rawHistoryString);
-        console.log("Loaded " + historyData.length + " rows");
+        const rawHistory = await histRes.text();
+        const rawActivity = await actRes.text();
+
+        if (!rawHistory || rawHistory.length < 10) throw new Error("History CSV is empty");
+
+        historyData = parseCSV(rawHistory);
+        activityData = parseCSV(rawActivity);
+
+        console.log(`Loaded ${historyData.length} history rows, ${activityData.length} activity rows`);
 
         if (historyData.length === 0) {
-          showError("No data parsed from CSV. The file matches headers but has no rows?");
+          showError("No data parsed from History CSV.");
           return;
         }
 
-        // Parse numbers and clean columns
+        // Parse History Data (Snapshots)
         historyData.forEach(row => {
           // Normalize empty strings to 0
           row['Total Commits'] = parseInt(row['Total Commits']) || 0;
@@ -455,6 +464,16 @@
             if (isNaN(row._date)) row._date = new Date(); // Fallback invalid date
           } else {
             row._date = new Date(); // Fallback missing date
+          }
+        });
+
+        // Parse Activity Data (Events)
+        activityData.forEach(row => {
+          // "Date" column is the event time (Commit/PR/Run)
+          if (row['Date'] && row['Date'].trim()) {
+            row._eventDate = new Date(row['Date']);
+          } else {
+            row._eventDate = new Date(0); // Unknown date
           }
         });
 
@@ -593,6 +612,18 @@
         let dateMatch = true;
         if (!isNaN(d._date)) {
           dateMatch = d._date >= start && d._date <= end;
+        }
+        return capMatch && repoMatch && dateMatch;
+      });
+
+      // Filter Activity Data (Events)
+      filteredActivityData = activityData.filter(d => {
+        const capMatch = selCaps.length === 0 || selCaps.includes(d.Capability || 'Unknown');
+        const repoMatch = selRepos.length === 0 || selRepos.includes(d.Repository);
+
+        let dateMatch = true;
+        if (!isNaN(d._eventDate)) {
+          dateMatch = d._eventDate >= start && d._eventDate <= end;
         }
         return capMatch && repoMatch && dateMatch;
       });
@@ -753,6 +784,9 @@
       const startDateStr = document.getElementById('filter-start-date').value;
       const endDateStr = document.getElementById('filter-end-date').value;
 
+      // Use filteredHistory for repos list, but filteredActivity could also work.
+      // Let's use filteredActivityData.map(d => d.Repository) to ensure we only show repos with activity in this range?
+      // Or keep strict filter list. Sticking to filteredData (snapshot) repos is safer for consistency with dropdown.
       const distinctRepos = [...new Set(filteredData.map(d => d.Repository))];
 
       // Generate full date range labels
@@ -770,18 +804,28 @@
         dayCount++;
       }
 
-      const createTrendDatasets = (metric) => {
+      const createTrendDatasets = (metricType) => {
         return distinctRepos.map((repo, idx) => {
-          // Build lookup map for this repo's data
-          const dataMap = {};
-          filteredData.filter(d => d.Repository === repo).forEach(d => {
-            // d.Timestamp is YYYY-MM-DD HH:mm:ss. Convert to YYYY-MM-DD key
-            const key = d.Timestamp.split(' ')[0];
-            dataMap[key] = d[metric];
+          // Aggregate counts per day from filteredActivityData
+          const dailyCounts = {};
+
+          filteredActivityData.forEach(d => {
+            if (d.Repository !== repo) return;
+
+            // Check Action type
+            let match = false;
+            if (metricType === 'Commits' && d.Action === 'Commit') match = true;
+            if (metricType === 'PRs' && d.Action === 'Merge (PR)') match = true;
+
+            if (match) {
+              const dateKey = d._eventDate.toISOString().split('T')[0];
+              dailyCounts[dateKey] = (dailyCounts[dateKey] || 0) + 1;
+            }
           });
 
           // Map to full date range
-          const data = dateLabels.map(date => dataMap[date] === undefined ? null : dataMap[date]);
+          // For activity, 0 is better than null for missing days (no activity = 0 commits)
+          const data = dateLabels.map(date => dailyCounts[date] || 0);
 
           return {
             label: repo,
@@ -795,8 +839,8 @@
       };
 
       // Use dateLabels for X-axis
-      renderChart('chart-trend-commits', 'line', dateLabels, createTrendDatasets('Total Commits'));
-      renderChart('chart-trend-prs', 'line', dateLabels, createTrendDatasets('Total Merged PRs'));
+      renderChart('chart-trend-commits', 'line', dateLabels, createTrendDatasets('Commits'));
+      renderChart('chart-trend-prs', 'line', dateLabels, createTrendDatasets('PRs'));
     }
 
     function renderChart(id, type, labels, datasets) {

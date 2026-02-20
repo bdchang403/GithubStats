@@ -22,6 +22,7 @@ Unlike traditional apps requiring a backend server, this project uses a **Self-U
 *   **AI Proxies**: Test Scaffold Quality vs Change Failure Rate bubble charts correlating AI adoption with boilerplate velocity.
 *   **Third-Party Integrations**: Cross-reference pull requests against Jira / ServiceNow IDs, and extract SonarQube unit tests, security ratings, and tech debt.
 *   **UI Data Trigger**: Trigger a fresh data update directly from the dashboard.
+*   **ETag API Caching**: Local `.api_cache` minimizes GitHub rate limit consumption by leveraging 304 Not Modified interceptions for historical metadata.
 
 ## 🚀 Installation & Setup
 

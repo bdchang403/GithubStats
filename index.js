@@ -1,10 +1,16 @@
 const fs = require('fs');
 const https = require('https');
 const path = require('path');
+const crypto = require('crypto');
 
 // --- Configuration ---
 const CONFIG_path = path.join(__dirname, 'config', '.env');
 const ENV = process.env;
+
+const API_CACHE_DIR = path.join(__dirname, '.api_cache');
+if (!fs.existsSync(API_CACHE_DIR)) {
+    fs.mkdirSync(API_CACHE_DIR);
+}
 
 function loadEnv() {
     const paths = [
@@ -104,6 +110,21 @@ async function fetchGitHub(url) {
     if (GITHUB_TOKEN) headers['Authorization'] = `token ${GITHUB_TOKEN}`;
     else console.warn("Warning: GITHUB_TOKEN not set. Rate limits apply.");
 
+    const urlHash = crypto.createHash('sha256').update(url).digest('hex');
+    const cacheFile = path.join(API_CACHE_DIR, `${urlHash}.json`);
+    let cachedData = null;
+
+    if (fs.existsSync(cacheFile)) {
+        try {
+            cachedData = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+            if (cachedData.etag) {
+                headers['If-None-Match'] = cachedData.etag;
+            }
+        } catch (e) {
+            // Ignore broken cache
+        }
+    }
+
     let retries = 3;
     while (retries > 0) {
         try {
@@ -138,12 +159,35 @@ async function fetchGitHub(url) {
                 }
             }
 
+            if (response.status === 304 && cachedData) {
+                return {
+                    data: cachedData.data,
+                    headers: new Headers(cachedData.headers),
+                    _status: 304
+                };
+            }
+
             if (!response.ok) {
                 logError(`Error ${response.status} fetch ${url}`);
                 return null;
             }
 
             const data = await response.json();
+
+            const etag = response.headers.get('etag');
+            if (etag) {
+                const cacheToSave = {
+                    etag: etag,
+                    headers: Array.from(response.headers.entries()),
+                    data: data
+                };
+                try {
+                    fs.writeFileSync(cacheFile, JSON.stringify(cacheToSave));
+                } catch (e) {
+                    // Ignore write fails
+                }
+            }
+
             return {
                 data,
                 headers: response.headers

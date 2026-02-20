@@ -232,6 +232,8 @@ async function fetchGitHubPaginated(url, maxPages = 10) {
             results = results.concat(data);
         } else if (data && data.items && Array.isArray(data.items)) { // Search API
             results = results.concat(data.items);
+        } else if (data && data.workflow_runs && Array.isArray(data.workflow_runs)) { // Actions API
+            results = results.concat(data.workflow_runs);
         } else {
             break; // Unknown format
         }
@@ -865,6 +867,25 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
     }
     stats["Change Failure Rate (%)"] = successfulDeploys > 0 ? ((failureIssues / successfulDeploys) * 100).toFixed(2) : 0;
 
+    // Infrastructure: CT.yml Tracking
+    let ctExists = "No";
+    let ctHasRuns = "No";
+    let ctLastRun = "N/A";
+
+    const ctFileRes = await fetchGitHub(`${API_BASE_URL}/repos/${repoName}/actions/workflows/CT.yml`);
+    if (ctFileRes && ctFileRes._status !== 404 && ctFileRes._status !== 403) {
+        ctExists = "Yes";
+        // Fetch runs specifically for CT.yml
+        const ctRunsRes = await fetchGitHub(`${API_BASE_URL}/repos/${repoName}/actions/workflows/CT.yml/runs?per_page=1`);
+        if (ctRunsRes && ctRunsRes.data && ctRunsRes.data.workflow_runs && ctRunsRes.data.workflow_runs.length > 0) {
+            ctHasRuns = "Yes";
+            ctLastRun = ctRunsRes.data.workflow_runs[0].created_at;
+        }
+    }
+    stats["CT.yml Exists"] = ctExists;
+    stats["CT.yml Has Runs"] = ctHasRuns;
+    stats["CT.yml Last Run"] = ctLastRun;
+
     // 3. True Lead Time, Review Cognitive Load, Code Churn & AI Proxies
     let totalReviewComments = 0;
     let totalWaitTimeHours = 0;
@@ -1111,6 +1132,9 @@ async function main() {
                 row['CI/CD Failure Rate (%)'] = row['CI/CD Failure Rate (%)'] || 0;
                 row['CI/CD Avg Execution Time (Mins)'] = row['CI/CD Avg Execution Time (Mins)'] || 0;
                 row['Avg Code Churn (Commits)'] = row['Avg Code Churn (Commits)'] || 0;
+                row['CT.yml Exists'] = row['CT.yml Exists'] || 'No';
+                row['CT.yml Has Runs'] = row['CT.yml Has Runs'] || 'No';
+                row['CT.yml Last Run'] = row['CT.yml Last Run'] || 'N/A';
                 return row;
             });
         }
@@ -1153,7 +1177,7 @@ async function main() {
         'MTTR-Sec (Hours)', 'Successful Deployments', 'Avg Review Comments per PR', 'Avg Wait Time for First Review (Hours)', 'Avg PR Description Length (Chars)', 'Small to Large PR Ratio',
         'Change Failure Rate (%)', 'True Lead Time for Changes (Hours)', 'Lead Time to Production (Days)', 'CI/CD Failure Rate (%)', 'CI/CD Avg Execution Time (Mins)', 'Avg Code Churn (Commits)',
         'Test Code Ratio (%)', 'Coding Velocity (LOC/Hr)',
-        'SQ Security Rating', 'SQ Technical Debt (Days)', 'SQ Code Smells', 'SQ Vulnerabilities', 'SQ Unit Tests', 'Environment', 'Timestamp'];
+        'SQ Security Rating', 'SQ Technical Debt (Days)', 'SQ Code Smells', 'SQ Vulnerabilities', 'SQ Unit Tests', 'CT.yml Exists', 'CT.yml Has Runs', 'CT.yml Last Run', 'Environment', 'Timestamp'];
 
     const csvContent = [cols.join(',')].concat(results.map(r => {
         return cols.map(c => {
@@ -1198,6 +1222,9 @@ async function main() {
                 r['Avg Code Churn (Commits)'] = r['Avg Code Churn (Commits)'] || 0;
                 r['Test Code Ratio (%)'] = r['Test Code Ratio (%)'] || 0;
                 r['Coding Velocity (LOC/Hr)'] = r['Coding Velocity (LOC/Hr)'] || 0;
+                r['CT.yml Exists'] = r['CT.yml Exists'] || 'No';
+                r['CT.yml Has Runs'] = r['CT.yml Has Runs'] || 'No';
+                r['CT.yml Last Run'] = r['CT.yml Last Run'] || 'N/A';
                 return r;
             });
 

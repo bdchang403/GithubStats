@@ -546,6 +546,9 @@
             <th>SQ Security</th>
             <th>SQ Tech Debt (Days)</th>
             <th>SQ Unit Tests</th>
+            <th>CT.yml Exists</th>
+            <th>CT.yml Has Runs</th>
+            <th>CT.yml Last Run</th>
             <th>Last Run</th>
           </tr>
         </thead>
@@ -1234,6 +1237,9 @@
             <td style="font-weight: bold; color: ${d['SQ Security Rating'] === 'A' ? 'green' : d['SQ Security Rating'] === 'B' ? 'var(--primary-color)' : 'var(--danger-color)'}">${d['SQ Security Rating'] || 'N/A'}</td>
             <td>${d['SQ Technical Debt (Days)'] ? parseFloat(d['SQ Technical Debt (Days)']).toFixed(1) : 'N/A'}</td>
             <td>${d['SQ Unit Tests'] || '0'}</td>
+            <td style="font-weight: bold; color: ${d['CT.yml Exists'] === 'Yes' ? 'green' : 'var(--danger-color)'}">${d['CT.yml Exists'] || 'No'}</td>
+            <td>${d['CT.yml Has Runs'] || 'No'}</td>
+            <td>${d['CT.yml Last Run'] || 'N/A'}</td>
             <td>${d._date.toLocaleString()}</td>
         `;
         tbody.appendChild(tr);

@@ -147,18 +147,29 @@ async function fetchGitHub(url) {
             }
 
             if (response.status === 403 || response.status === 429) {
-                const resetTime = parseInt(response.headers.get('x-ratelimit-reset') || '0', 10) * 1000;
-                const now = Date.now();
-                if (resetTime > now) {
-                    const waitMs = resetTime - now + 5000;
+                const remaining = parseInt(response.headers.get('x-ratelimit-remaining') || '100', 10);
+                const retryAfter = response.headers.get('retry-after');
+
+                // Only sleep if it's an ACTUAL rate limit (Remaining 0) OR a secondary token limit (retry-after)
+                if (remaining === 0 || retryAfter) {
+                    let waitMs = 0;
+                    if (retryAfter) {
+                        waitMs = parseInt(retryAfter, 10) * 1000 + 5000;
+                    } else {
+                        const resetTime = parseInt(response.headers.get('x-ratelimit-reset') || '0', 10) * 1000;
+                        const now = Date.now();
+                        waitMs = (resetTime > now) ? (resetTime - now + 5000) : 60000;
+                    }
+
                     console.warn(`Rate limited (403/429). Waiting ${Math.round(waitMs / 1000)}s...`);
                     await new Promise(r => setTimeout(r, waitMs));
                     retries--;
                     continue;
                 }
-                // If it's 403 but not rate limit (e.g., Advanced Security disabled)
-                if (response.status === 403 && url.includes('code-scanning/alerts')) {
-                    console.warn(`Advanced Security disabled or access denied for ${url}. Returning empty.`);
+
+                // If it's 403 but NOT a rate limit (e.g., Advanced Security disabled, or issues disabled on repo)
+                if (response.status === 403) {
+                    console.warn(`Access denied for ${url} (Feature disabled or lack of repo scope).`);
                     return { _status: 403, data: [] }; // Special return for graceful degradation
                 }
             }
@@ -611,7 +622,91 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
     stats["Distinct Committers Count"] = committers.size;
     stats["Distinct Committers List"] = Array.from(committers).sort().join(", ");
 
-    // 2. PRs (Activity Logging & DORA/SPACE Metrics)
+    // 2. Workflow Runs (Broad Fetch for both Failures and Success/Deploys)
+    // Must be fetched BEFORE PRs so DORA Lead Time to Production has deployment timestamps
+    let lastRunDate = prevState ? prevState["Last Workflow Date"] : null;
+    let failedRuns = 0;
+    let totalExecMinutes = 0;
+    let execCount = 0;
+
+    let successfulDeploys = 0;
+    const recentDeploys = [];
+
+    // Unified 3-page fetch gathering up to 300 runs
+    const runsRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/actions/runs?per_page=100&sort=created_at&direction=desc`, 3);
+    const runs = { workflow_runs: runsRes || [] };
+    if (runs && runs.workflow_runs && runs.workflow_runs.length > 0) {
+        stats["Last Workflow Date"] = runs.workflow_runs[0].created_at;
+
+        runs.workflow_runs.forEach(r => {
+            if (r.conclusion === "failure" || r.conclusion === "cancelled" || r.conclusion === "timed_out") failedRuns++;
+            if (r.run_started_at && r.updated_at) {
+                const start = new Date(r.run_started_at);
+                const end = new Date(r.updated_at);
+                if (end > start) {
+                    totalExecMinutes += (end - start) / 60000;
+                    execCount++;
+                }
+            }
+
+            // Extract Deployment Frequency from the unified bulk payload
+            if (r.conclusion === "success") {
+                const b = (r.head_branch || "").toLowerCase();
+                if (["main", "master", "prod"].some(x => b.includes(x))) {
+                    successfulDeploys++;
+                    recentDeploys.push(new Date(r.created_at));
+                }
+            }
+        });
+
+        stats["CI/CD Failure Rate (%)"] = ((failedRuns / runs.workflow_runs.length) * 100).toFixed(2);
+        stats["CI/CD Avg Execution Time (Mins)"] = execCount > 0 ? (totalExecMinutes / execCount).toFixed(2) : 0;
+
+        for (const run of runs.workflow_runs) {
+            if (lastRunDate && run.created_at <= lastRunDate) continue;
+
+            const outcome = run.conclusion || run.status;
+
+            // Get Environment from CICD.yml at that SHA
+            let runEnv = "Unknown";
+            if (run.head_sha && cicdCache[`${repoName}:HEAD`] !== false) {
+                runEnv = await fetchCICDConfig(repoName, run.head_sha);
+            }
+            if (!runEnv || runEnv === "Unknown") {
+                runEnv = stats["Environment"] !== "Unknown" ? stats["Environment"] : getEnvironment(run.head_branch);
+            }
+
+            // User: Try Head Commit Email, else Triggering Actor Login
+            let runUser = "Unknown";
+            if (run.head_commit && run.head_commit.author && run.head_commit.author.email) {
+                runUser = run.head_commit.author.email;
+            } else if (run.triggering_actor) {
+                runUser = run.triggering_actor.login;
+            }
+
+            logs.push({
+                Timestamp: new Date().toISOString(),
+                Repository: repoName,
+                Capability: capability,
+                Action: `Workflow Run (${outcome})`,
+                User: runUser,
+                Date: run.created_at,
+                Environment: runEnv,
+                "Cross-Ref ID": extractCrossRefID(run.display_title),
+                "Associated PR": extractAssociatedPR(run.display_title),
+                ID: `Run #${run.run_number}`,
+                Message: (run.display_title || "").substring(0, 100),
+                "Branch Duration (Hours)": 0,
+                "Review Time (Hours)": 0,
+                "LOC Changed": 0,
+                "PR Size (Commits)": 0,
+                "Target Branch": run.head_branch || ""
+            });
+        }
+    }
+    stats["Successful Deployments"] = successfulDeploys;
+
+    // 3. PRs (Activity Logging & DORA/SPACE Metrics)
     let lastPRDate = null;
     if (prevState) lastPRDate = prevState["Last PR Date"];
 
@@ -821,87 +916,8 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
         if (!stats["Last PR Date"]) stats["Last PR Date"] = prevState["Last PR Date"];
     }
 
-    // 3. Workflow Runs (Broad Fetch for both Failures and Success/Deploys)
-    let lastRunDate = prevState ? prevState["Last Workflow Date"] : null;
-    let failedRuns = 0;
-    let totalExecMinutes = 0;
-    let execCount = 0;
-
-    let successfulDeploys = 0;
-    let recentDeploys = [];
-
-    // Unified 3-page fetch gathering up to 300 runs
-    const runsRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/actions/runs?per_page=100&sort=created_at&direction=desc`, 3);
-    const runs = { workflow_runs: runsRes || [] };
-    if (runs && runs.workflow_runs && runs.workflow_runs.length > 0) {
-        stats["Last Workflow Date"] = runs.workflow_runs[0].created_at;
-
-        runs.workflow_runs.forEach(r => {
-            if (r.conclusion === "failure" || r.conclusion === "cancelled" || r.conclusion === "timed_out") failedRuns++;
-            if (r.run_started_at && r.updated_at) {
-                const start = new Date(r.run_started_at);
-                const end = new Date(r.updated_at);
-                if (end > start) {
-                    totalExecMinutes += (end - start) / 60000;
-                    execCount++;
-                }
-            }
-
-            // Extract Deployment Frequency from the unified bulk payload
-            if (r.conclusion === "success") {
-                const b = (r.head_branch || "").toLowerCase();
-                if (["main", "master", "prod"].some(x => b.includes(x))) {
-                    successfulDeploys++;
-                    recentDeploys.push(new Date(r.created_at));
-                }
-            }
-        });
-
-        stats["CI/CD Failure Rate (%)"] = ((failedRuns / runs.workflow_runs.length) * 100).toFixed(2);
-        stats["CI/CD Avg Execution Time (Mins)"] = execCount > 0 ? (totalExecMinutes / execCount).toFixed(2) : 0;
-
-        for (const run of runs.workflow_runs) {
-            if (lastRunDate && run.created_at <= lastRunDate) continue;
-
-            const outcome = run.conclusion || run.status;
-
-            // Get Environment from CICD.yml at that SHA
-            let runEnv = "Unknown";
-            if (run.head_sha && cicdCache[`${repoName}:HEAD`] !== false) {
-                runEnv = await fetchCICDConfig(repoName, run.head_sha);
-            }
-            if (!runEnv || runEnv === "Unknown") {
-                runEnv = stats["Environment"] !== "Unknown" ? stats["Environment"] : getEnvironment(run.head_branch);
-            }
-
-            // User: Try Head Commit Email, else Triggering Actor Login
-            let runUser = "Unknown";
-            if (run.head_commit && run.head_commit.author && run.head_commit.author.email) {
-                runUser = run.head_commit.author.email;
-            } else if (run.triggering_actor) {
-                runUser = run.triggering_actor.login;
-            }
-
-            logs.push({
-                Timestamp: new Date().toISOString(),
-                Repository: repoName,
-                Capability: capability,
-                Action: `Workflow Run (${outcome})`,
-                User: runUser,
-                Date: run.created_at,
-                Environment: runEnv,
-                "Cross-Ref ID": extractCrossRefID(run.display_title),
-                "Associated PR": extractAssociatedPR(run.display_title),
-                ID: `Run #${run.id}`,
-                Message: `${run.name} - ${run.display_title}`.substring(0, 100),
-                "Branch Duration (Hours)": null,
-                "Review Time (Hours)": null,
-                "LOC Changed": null,
-                "PR Size (Commits)": null,
-                "Target Branch": run.head_branch
-            });
-        }
-    } else if (prevState && !stats["Last Workflow Date"]) {
+    // Removed workflow fetching from here since it moved up
+    if (prevState && !stats["Last Workflow Date"]) {
         stats["Last Workflow Date"] = prevState["Last Workflow Date"];
     }
 

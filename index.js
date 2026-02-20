@@ -249,8 +249,15 @@ async function fetchGitHubPaginated(url, maxPages = 10) {
 }
 
 // --- External API Cross-Referencing ---
+const defectCache = {};
+
 async function checkExternalDefect(text) {
     if (!integrationConfig || !text) return null;
+
+    // Attempt cache hit
+    if (defectCache[text] !== undefined) {
+        return defectCache[text];
+    }
 
     // Try Jira
     if (integrationConfig.jira && integrationConfig.jira.enabled) {
@@ -284,9 +291,13 @@ async function checkExternalDefect(text) {
                     let createdAt = data.fields.created ? new Date(data.fields.created) : null;
                     let resolvedAt = data.fields.resolutiondate ? new Date(data.fields.resolutiondate) : null;
 
-                    return { isDefect, createdAt, resolvedAt };
+                    const result = { isDefect, createdAt, resolvedAt };
+                    defectCache[text] = result;
+                    return result;
                 }
-                return { isDefect: false, createdAt: null, resolvedAt: null };
+                const result = { isDefect: false, createdAt: null, resolvedAt: null };
+                defectCache[text] = result;
+                return result;
             } catch (e) {
                 logError(`Jira API error for ${issueKey}: ${e.message}`);
                 return "Unverified";
@@ -331,10 +342,14 @@ async function checkExternalDefect(text) {
                         let createdAt = incident.sys_created_on ? new Date(incident.sys_created_on + " UTC") : null;
                         let resolvedAt = incident.resolved_at ? new Date(incident.resolved_at + " UTC") : (incident.closed_at ? new Date(incident.closed_at + " UTC") : null);
 
-                        return { isDefect, createdAt, resolvedAt };
+                        const result = { isDefect, createdAt, resolvedAt };
+                        defectCache[text] = result;
+                        return result;
                     }
                 }
-                return { isDefect: false, createdAt: null, resolvedAt: null };
+                const result = { isDefect: false, createdAt: null, resolvedAt: null };
+                defectCache[text] = result;
+                return result;
             } catch (e) {
                 logError(`ServiceNow API error for ${issueKey}: ${e.message}`);
                 return "Unverified";
@@ -799,13 +814,17 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
         if (!stats["Last PR Date"]) stats["Last PR Date"] = prevState["Last PR Date"];
     }
 
-    // 3. Workflow Runs
+    // 3. Workflow Runs (Broad Fetch for both Failures and Success/Deploys)
     let lastRunDate = prevState ? prevState["Last Workflow Date"] : null;
     let failedRuns = 0;
     let totalExecMinutes = 0;
     let execCount = 0;
 
-    const runsRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/actions/runs?per_page=100&sort=created_at&direction=desc`, 1);
+    let successfulDeploys = 0;
+    let recentDeploys = [];
+
+    // Unified 3-page fetch gathering up to 300 runs
+    const runsRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/actions/runs?per_page=100&sort=created_at&direction=desc`, 3);
     const runs = { workflow_runs: runsRes || [] };
     if (runs && runs.workflow_runs && runs.workflow_runs.length > 0) {
         stats["Last Workflow Date"] = runs.workflow_runs[0].created_at;
@@ -818,6 +837,15 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
                 if (end > start) {
                     totalExecMinutes += (end - start) / 60000;
                     execCount++;
+                }
+            }
+
+            // Extract Deployment Frequency from the unified bulk payload
+            if (r.conclusion === "success") {
+                const b = (r.head_branch || "").toLowerCase();
+                if (["main", "master", "prod"].some(x => b.includes(x))) {
+                    successfulDeploys++;
+                    recentDeploys.push(new Date(r.created_at));
                 }
             }
         });
@@ -913,20 +941,7 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
     }
 
     // 2. Deployment Frequency & Change Failure Rate
-    let successfulDeploys = 0;
-    let recentDeploys = [];
-    // Note: "runs" fetched earlier is only the first page and all statuses. We want success only.
-    // Fetch specifically for success status.
-    const deploys = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/actions/runs?status=success&per_page=100`, 3); // last ~300 max
-    if (deploys && Array.isArray(deploys)) {
-        for (const run of deploys) {
-            const b = (run.head_branch || "").toLowerCase();
-            if (["main", "master", "prod"].some(x => b.includes(x))) {
-                successfulDeploys++;
-                recentDeploys.push(new Date(run.created_at));
-            }
-        }
-    }
+    // (successfulDeploys & recentDeploys are now extracted securely upstairs from the unified bounds)
     stats["Successful Deployments"] = successfulDeploys;
     recentDeploys.sort((a, b) => a - b); // Sort chronologically (oldest first) for lead time calculation
 

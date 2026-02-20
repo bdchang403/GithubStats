@@ -589,81 +589,187 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
     stats["Distinct Committers Count"] = committers.size;
     stats["Distinct Committers List"] = Array.from(committers).sort().join(", ");
 
-    // 2. PRs
+    // 2. PRs (Activity Logging & DORA/SPACE Metrics)
     let lastPRDate = null;
     if (prevState) lastPRDate = prevState["Last PR Date"];
 
-    let prQuery = `q=repo:${repoName}+is:pr+is:closed`;
-    if (lastPRDate) prQuery += `+closed:>${lastPRDate}`;
+    // Use unified Pulls API block, completely skipping the 30req/min Search API limit
+    const recentPRsRaw = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/pulls?state=closed&per_page=${Math.min(100, maxPrsLimit)}&sort=updated&direction=desc`, Math.ceil(maxPrsLimit / 100));
+    let recentPRs = [];
+    if (recentPRsRaw && Array.isArray(recentPRsRaw)) {
+        recentPRs = recentPRsRaw.slice(0, maxPrsLimit);
+    }
 
-    const prsRes = await fetchGitHubPaginated(`${API_BASE_URL}/search/issues?${prQuery}&sort=updated&order=desc&per_page=100`, 1);
-    const prs = { items: prsRes || [] };
+    if (recentPRs.length > 0) {
+        stats["Last PR Date"] = recentPRs[0].closed_at;
+    }
+
     const prAuthors = new Set();
-
     const metrics_accum = { duration: 0, review: 0, loc: 0, count: 0 };
 
-    if (prs && prs.items) {
-        if (prs.items.length > 0) {
-            stats["Last PR Date"] = prs.items[0].closed_at;
-        }
+    let totalReviewComments = 0;
+    let totalWaitTimeHours = 0;
+    let prsWithReviews = 0;
+    let totalDescLength = 0;
+    let prsAnalyzed = 0;
+    let smallPRCount = 0;
+    let largePRCount = 0;
+    let totalTrueLeadTime = 0;
+    let prsWithTrueLeadTime = 0;
+    let totalLeadTimeToProd = 0;
+    let prsWithLeadTimeToProd = 0;
+    let totalCodeChurn = 0;
 
-        for (const item of prs.items) {
-            if (lastPRDate && item.closed_at <= lastPRDate) continue;
+    let totalTestLOC = 0;
+    let totalCoreLOC = 0;
+    let prsWithFilesAnalyzed = 0;
 
-            const prNum = item.number;
-            const isMerged = item.pull_request && item.pull_request.merged_at;
-            const action = isMerged ? "Merge (PR)" : "Close (PR - Unmerged)";
+    let totalActiveCodingTimeHours = 0;
+    let totalActiveCodingLOC = 0;
+    let prsWithCodingVelocity = 0;
 
-            const prDetailRes = await fetchGitHub(`${API_BASE_URL}/repos/${repoName}/pulls/${prNum}`);
-            const prDetail = prDetailRes ? prDetailRes.data : null;
-            if (!prDetail) continue;
+    if (recentPRs.length > 0) {
+        // Concurrency control: batch process PR reviews and deep metrics
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < recentPRs.length; i += BATCH_SIZE) {
+            const batch = recentPRs.slice(i, i + BATCH_SIZE);
 
-            // Try to get email, fallback to login
-            let author = "Unknown";
-            if (prDetail.user) {
-                // Note: user.email is often null unless authenticated with correct scopes/permission
-                author = prDetail.user.email || prDetail.user.login;
-            }
-            prAuthors.add(author);
+            await Promise.all(batch.map(async (item) => {
+                if (lastPRDate && item.closed_at <= lastPRDate) return;
 
-            if (isMerged) stats["Total Merged PRs"]++;
+                const prNum = item.number;
+                const isMerged = item.merged_at != null;
+                const action = isMerged ? "Merge (PR)" : "Close (PR - Unmerged)";
 
-            const createdAt = new Date(prDetail.created_at);
-            const closedAt = new Date(prDetail.closed_at);
+                // We still need PR Detail for Additions/Deletions, but now we're bounded by maxPrsLimit!
+                const prDetailRes = await fetchGitHub(`${API_BASE_URL}/repos/${repoName}/pulls/${prNum}`);
+                const prDetail = prDetailRes ? prDetailRes.data : null;
+                if (!prDetail) return;
 
-            let durationHours = 0;
-            if (closedAt > createdAt) {
-                durationHours = (closedAt - createdAt) / (1000 * 3600);
-            }
+                // --- 2a: Activity Log Extraction ---
+                let author = "Unknown";
+                if (prDetail.user) {
+                    author = prDetail.user.email || prDetail.user.login;
+                }
+                prAuthors.add(author);
 
-            let reviewHours = durationHours;
-            const loc = (prDetail.additions || 0) + (prDetail.deletions || 0);
+                if (isMerged) stats["Total Merged PRs"]++;
 
-            if (isMerged) {
-                metrics_accum.duration += durationHours;
-                metrics_accum.review += reviewHours;
-                metrics_accum.loc += loc;
-                metrics_accum.count++;
-            }
+                const createdAt = new Date(prDetail.created_at);
+                const closedAt = new Date(prDetail.closed_at);
 
-            logs.push({
-                Timestamp: new Date().toISOString(),
-                Repository: repoName,
-                Capability: capability,
-                Action: action,
-                User: author,
-                Date: item.closed_at,
-                Environment: stats["Environment"] !== "Unknown" ? stats["Environment"] : getEnvironment(prDetail.base.ref),
-                "Cross-Ref ID": extractCrossRefID(item.title),
-                "Associated PR": `PR #${prNum}`,
-                ID: `PR #${prNum}`,
-                Message: item.title.substring(0, 100),
-                "Branch Duration (Hours)": durationHours.toFixed(2),
-                "Review Time (Hours)": reviewHours.toFixed(2),
-                "LOC Changed": loc,
-                "PR Size (Commits)": prDetail.commits,
-                "Target Branch": prDetail.base.ref
-            });
+                let durationHours = 0;
+                if (closedAt > createdAt) {
+                    durationHours = (closedAt - createdAt) / (1000 * 3600);
+                }
+
+                let reviewHours = durationHours;
+                const loc = (prDetail.additions || 0) + (prDetail.deletions || 0);
+
+                if (isMerged) {
+                    metrics_accum.duration += durationHours;
+                    metrics_accum.review += reviewHours;
+                    metrics_accum.loc += loc;
+                    metrics_accum.count++;
+
+                    // SPACE Metrics additions
+                    prsAnalyzed++;
+                    totalDescLength += (prDetail.body || "").length;
+                    if (loc < 200) smallPRCount++;
+                    else largePRCount++;
+                }
+
+                logs.push({
+                    Timestamp: new Date().toISOString(),
+                    Repository: repoName,
+                    Capability: capability,
+                    Action: action,
+                    User: author,
+                    Date: item.closed_at,
+                    Environment: stats["Environment"] !== "Unknown" ? stats["Environment"] : getEnvironment(prDetail.base.ref),
+                    "Cross-Ref ID": extractCrossRefID(item.title),
+                    "Associated PR": `PR #${prNum}`,
+                    ID: `PR #${prNum}`,
+                    Message: item.title.substring(0, 100),
+                    "Branch Duration (Hours)": durationHours.toFixed(2),
+                    "Review Time (Hours)": reviewHours.toFixed(2),
+                    "LOC Changed": loc,
+                    "PR Size (Commits)": prDetail.commits || 0,
+                    "Target Branch": prDetail.base.ref
+                });
+
+                // --- 2b: Deep Metrics Extraction (Only for merged PRs) ---
+                if (!isMerged) return;
+
+                // AI Proxy 1: Test Code Ratio
+                const prFilesRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/pulls/${prNum}/files?per_page=100`, 1);
+                if (prFilesRes && Array.isArray(prFilesRes)) {
+                    prsWithFilesAnalyzed++;
+                    prFilesRes.forEach(file => {
+                        const fileLoc = file.additions + file.deletions;
+                        const fname = file.filename.toLowerCase();
+                        if (fname.includes('test') || fname.includes('spec')) {
+                            totalTestLOC += fileLoc;
+                        } else {
+                            totalCoreLOC += fileLoc;
+                        }
+                    });
+                }
+
+                // Reviews
+                const reviewsRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/pulls/${prNum}/reviews?per_page=100`, 2);
+
+                // Commits for True Lead Time and Code Churn
+                const prCommitsRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/pulls/${prNum}/commits?per_page=100`, 1);
+
+                if (prCommitsRes && Array.isArray(prCommitsRes) && prCommitsRes.length > 0) {
+                    const firstCommitTime = new Date(prCommitsRes[0].commit.committer.date);
+
+                    if (closedAt > firstCommitTime) {
+                        totalTrueLeadTime += (closedAt - firstCommitTime) / (1000 * 3600);
+                        prsWithTrueLeadTime++;
+
+                        // DORA: Lead Time to Production (Days)
+                        const firstDeploy = recentDeploys.find(d => d >= closedAt);
+                        if (firstDeploy) {
+                            totalLeadTimeToProd += (firstDeploy - firstCommitTime) / (1000 * 3600 * 24);
+                            prsWithLeadTimeToProd++;
+                        }
+                    }
+
+                    // AI Proxy 2: Coding Velocity
+                    if (createdAt > firstCommitTime) {
+                        const activeHours = (createdAt - firstCommitTime) / (1000 * 3600);
+                        if (activeHours > 0.08 && loc > 0) {
+                            totalActiveCodingTimeHours += activeHours;
+                            totalActiveCodingLOC += loc;
+                            prsWithCodingVelocity++;
+                        }
+                    }
+                }
+
+                if (reviewsRes && Array.isArray(reviewsRes) && reviewsRes.length > 0) {
+                    prsWithReviews++;
+                    totalReviewComments += reviewsRes.length;
+
+                    // Wait time to first review
+                    const sortedReviews = reviewsRes
+                        .filter(r => r.submitted_at)
+                        .sort((a, b) => new Date(a.submitted_at) - new Date(b.submitted_at));
+
+                    if (sortedReviews.length > 0) {
+                        const firstReviewTime = new Date(sortedReviews[0].submitted_at);
+                        if (firstReviewTime > createdAt) {
+                            totalWaitTimeHours += (firstReviewTime - createdAt) / (1000 * 3600);
+                        }
+
+                        if (prCommitsRes && Array.isArray(prCommitsRes)) {
+                            const churn = prCommitsRes.filter(c => new Date(c.commit.committer.date) > firstReviewTime).length;
+                            totalCodeChurn += churn;
+                        }
+                    }
+                }
+            }));
         }
     }
 
@@ -891,136 +997,7 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
     stats["CT.yml Last Run"] = ctLastRun;
 
     // 3. True Lead Time, Review Cognitive Load, Code Churn & AI Proxies
-    let totalReviewComments = 0;
-    let totalWaitTimeHours = 0;
-    let prsWithReviews = 0;
-    let totalDescLength = 0;
-    let prsAnalyzed = 0;
-    let smallPRCount = 0;
-    let largePRCount = 0;
-    let totalTrueLeadTime = 0;
-    let prsWithTrueLeadTime = 0;
-    let totalLeadTimeToProd = 0;
-    let prsWithLeadTimeToProd = 0;
-    let totalCodeChurn = 0;
 
-    let totalTestLOC = 0;
-    let totalCoreLOC = 0;
-    let prsWithFilesAnalyzed = 0;
-
-    let totalActiveCodingTimeHours = 0;
-    let totalActiveCodingLOC = 0;
-    let prsWithCodingVelocity = 0;
-
-    // Fetch up to 100 recent closed PRs, but we will slice it to reduce heavy API load
-    const recentPRsRaw = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/pulls?state=closed&per_page=${Math.min(100, maxPrsLimit)}&sort=updated&direction=desc`, Math.ceil(maxPrsLimit / 100));
-    let recentPRs = [];
-
-    if (recentPRsRaw && Array.isArray(recentPRsRaw)) {
-        recentPRs = recentPRsRaw.slice(0, maxPrsLimit);
-
-        // Concurrency control: batch process PR reviews
-        const BATCH_SIZE = 5;
-        for (let i = 0; i < recentPRs.length; i += BATCH_SIZE) {
-            const batch = recentPRs.slice(i, i + BATCH_SIZE);
-
-            await Promise.all(batch.map(async (pr) => {
-                if (!pr.merged_at) return; // Only analyze merged PRs
-
-                prsAnalyzed++;
-
-                // PR Description Length
-                const descStr = pr.body || "";
-                totalDescLength += descStr.length;
-
-                // Needs PR detail for LOC
-                const prDetailRes = await fetchGitHub(`${API_BASE_URL}/repos/${repoName}/pulls/${pr.number}`);
-                const prDetail = prDetailRes ? prDetailRes.data : null;
-                if (prDetail) {
-                    const loc = (prDetail.additions || 0) + (prDetail.deletions || 0);
-                    if (loc < 200) smallPRCount++;
-                    else largePRCount++;
-                }
-
-                // AI Proxy 1: Test Code Ratio
-                const prFilesRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/pulls/${pr.number}/files?per_page=100`, 1);
-                if (prFilesRes && Array.isArray(prFilesRes)) {
-                    prsWithFilesAnalyzed++;
-                    prFilesRes.forEach(file => {
-                        const fileLoc = file.additions + file.deletions;
-                        const fname = file.filename.toLowerCase();
-                        if (fname.includes('test') || fname.includes('spec')) {
-                            totalTestLOC += fileLoc;
-                        } else {
-                            totalCoreLOC += fileLoc;
-                        }
-                    });
-                }
-
-                // Reviews
-                const reviewsRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/pulls/${pr.number}/reviews?per_page=100`, 2);
-
-                // Commits for True Lead Time and Code Churn
-                const prCommitsRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/pulls/${pr.number}/commits?per_page=100`, 1);
-
-                if (prCommitsRes && Array.isArray(prCommitsRes) && prCommitsRes.length > 0) {
-                    const firstCommitTime = new Date(prCommitsRes[0].commit.committer.date);
-                    const closedAt = new Date(pr.merged_at);
-                    const prCreateTime = new Date(pr.created_at);
-
-                    if (closedAt > firstCommitTime) {
-                        totalTrueLeadTime += (closedAt - firstCommitTime) / (1000 * 3600);
-                        prsWithTrueLeadTime++;
-
-                        // DORA: Lead Time to Production (Days) - Time from first commit to production deployment
-                        const firstDeploy = recentDeploys.find(d => d >= closedAt);
-                        if (firstDeploy) {
-                            totalLeadTimeToProd += (firstDeploy - firstCommitTime) / (1000 * 3600 * 24); // Days
-                            prsWithLeadTimeToProd++;
-                        }
-                    }
-
-                    // AI Proxy 2: Coding Velocity (LOC / Active Coding Hour)
-                    if (prCreateTime > firstCommitTime) {
-                        const activeHours = (prCreateTime - firstCommitTime) / (1000 * 3600);
-                        // Filter out instant pushes (< 5 mins) to avoid infinity velocity skewed by single massive commits
-                        let prLoc = 0;
-                        if (prDetail) prLoc = (prDetail.additions || 0) + (prDetail.deletions || 0);
-
-                        if (activeHours > 0.08 && prLoc > 0) {
-                            totalActiveCodingTimeHours += activeHours;
-                            totalActiveCodingLOC += prLoc;
-                            prsWithCodingVelocity++;
-                        }
-                    }
-                }
-
-                if (reviewsRes && Array.isArray(reviewsRes) && reviewsRes.length > 0) {
-                    prsWithReviews++;
-                    totalReviewComments += reviewsRes.length;
-
-                    // Wait time to first review
-                    // Sort by submitted_at
-                    const sortedReviews = reviewsRes
-                        .filter(r => r.submitted_at)
-                        .sort((a, b) => new Date(a.submitted_at) - new Date(b.submitted_at));
-
-                    if (sortedReviews.length > 0) {
-                        const tCreate = new Date(pr.created_at);
-                        const firstReviewTime = new Date(sortedReviews[0].submitted_at);
-                        if (firstReviewTime > tCreate) {
-                            totalWaitTimeHours += (firstReviewTime - tCreate) / (1000 * 3600);
-                        }
-
-                        if (prCommitsRes && Array.isArray(prCommitsRes)) {
-                            const churn = prCommitsRes.filter(c => new Date(c.commit.committer.date) > firstReviewTime).length;
-                            totalCodeChurn += churn;
-                        }
-                    }
-                }
-            }));
-        }
-    }
 
     if (prsAnalyzed > 0) {
         stats["Avg PR Description Length (Chars)"] = Math.round(totalDescLength / prsAnalyzed);

@@ -452,7 +452,14 @@ const cicdCache = {}; // Cache to prevent redundant API calls for the same repo+
 
 async function fetchCICDConfig(repoName, sha = null) {
     const cacheKey = `${repoName}:${sha || 'HEAD'}`;
+    const headKey = `${repoName}:HEAD`;
+
     if (cicdCache[cacheKey] !== undefined) return cicdCache[cacheKey];
+
+    // If we already know HEAD doesn't have CICD.yml, don't ping ancient SHAs 300 times
+    if (sha && cicdCache[headKey] === false) {
+        return null;
+    }
 
     try {
         let url = `${API_BASE_URL}/repos/${repoName}/contents/CICD.yml`;
@@ -490,7 +497,7 @@ async function fetchCICDConfig(repoName, sha = null) {
     } catch (e) {
         // Ignore errors
     }
-    cicdCache[cacheKey] = null;
+    cicdCache[cacheKey] = false; // Mark as definitively not found so we don't spam 404s
     return null;
 }
 
@@ -860,7 +867,7 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
 
             // Get Environment from CICD.yml at that SHA
             let runEnv = "Unknown";
-            if (run.head_sha) {
+            if (run.head_sha && cicdCache[`${repoName}:HEAD`] !== false) {
                 runEnv = await fetchCICDConfig(repoName, run.head_sha);
             }
             if (!runEnv || runEnv === "Unknown") {

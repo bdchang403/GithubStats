@@ -1,19 +1,16 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-.venv/
-venv/
-env/
-
-
 # Environment Variables (Keep secrets out of git!)
 config/.env
 .env
+integration_config.json
+!integration_config.json.template
 
 # Data Output
-github_stats_history_backup.csv
+*.csv
+!*.csv.template
 
 # IDE
 .vscode/
 .idea/
+
+# Logs
+*.log

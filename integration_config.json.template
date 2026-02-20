@@ -1,0 +1,47 @@
+{
+  "jira": {
+    "enabled": false,
+    "baseUrl": "https://your-domain.atlassian.net",
+    "regexPattern": "([A-Z]+-\\d+)",
+    "auth": {
+      "username": "your-email@example.com",
+      "apiToken": "your-jira-api-token"
+    },
+    "mappings": {
+      "defectTypes": ["Bug", "Defect", "Incident"]
+    }
+  },
+  "serviceNow": {
+    "enabled": false,
+    "baseUrl": "https://your-instance.service-now.com",
+    "regexPattern": "((CHG|INC|PRB)\\d+)",
+    "auth": {
+      "//note": "If using SSO, Basic Auth will not work. You must generate a Personal Access Token (PAT) or OAuth Bearer token in ServiceNow.",
+      "bearerToken": "your-oauth-or-pat-token-here",
+      "username": "",
+      "password": ""
+    },
+    "mappings": {
+      "defectTypes": ["incident", "problem"]
+    }
+  },
+  "sonarQube": {
+    "enabled": false,
+    "baseUrl": "https://sonar.your-company.com",
+    "auth": {
+      "//note": "Generate a User Token in SonarQube (My Account -> Security). SonarQube API uses the token as the username with no password.",
+      "token": "your-sonarqube-token-here"
+    },
+    //note: "By default, the script takes this prefix and concatenates the GitHub Repository Name (e.g. prefix:repo-alpha). To specify exact differing project keys for certain repos, supply it as the third column in github_input.csv. You can specify multiple keys separated by | or ; for mono-repos.",
+    "projectKeyPrefix": "com.yourcompany:",
+    "metrics": [
+      "vulnerabilities",
+      "security_rating",
+      "sqale_index",
+      "code_smells",
+      "coverage",
+      "tests"
+    ],
+    "projectKeyPrefix": "com.yourcompany:"
+  }
+}

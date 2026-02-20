@@ -4,8 +4,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GitHub Stats Dashboard</title>
+  <title>Digitization Github Stats Dashboard</title>
   <script src="vendor/chart.min.js"></script>
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
   <script src="vendor/papaparse.min.js"></script>
   <style>
     :root {
@@ -136,6 +138,22 @@
       font-size: 1.8rem;
       font-weight: 600;
       color: var(--text-main);
+    }
+
+    .metric-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 10px;
+      line-height: 1.4;
+      border-top: 1px dashed var(--border);
+      padding-top: 8px;
+    }
+
+    .chart-desc {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin: 4px 0 14px 0;
+      line-height: 1.4;
     }
 
     /* Charts Grid */
@@ -293,7 +311,7 @@
   <!-- Main -->
   <div class="main">
     <div class="header">
-      <h1>Dashboard Overview</h1>
+      <h1>Digitization Github Dashboard</h1>
       <div class="last-updated" id="last-updated">Last Run: -</div>
     </div>
 
@@ -321,32 +339,146 @@
       </div>
     </div>
 
+    <!-- DevSecOps & AI Metrics (New) -->
+    <h2 class="section-title">DevSecOps & AI Metrics (DORA / SPACE)</h2>
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-title">Avg MTTR-Sec (Hours)</div>
+        <div class="metric-value" id="kpi-mttr">0.0</div>
+        <div class="metric-desc">
+          <b>Calculation:</b> Time from vulnerability detection to remediation (closed alerts).<br>
+          <b>Good:</b> &lt; 24h (Critical), &lt; 7d (High).<br>
+          <i>Ref: DevSecOps Best Practices (DORA)</i>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-title">Change Failure Rate (%)</div>
+        <div class="metric-value" id="kpi-cfr">0.0%</div>
+        <div class="metric-desc">
+          <b>Calculation:</b> Bug/Hotfix issues created within 48h of a successful main/prod deployment.<br>
+          <b>Good:</b> 0% - 15% (Elite).<br>
+          <i>Ref: DORA Metrics (Accelerate)</i>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-title">CI/CD Failure Rate (%)</div>
+        <div class="metric-value" id="kpi-ci-fail">0.0%</div>
+        <div class="metric-desc">
+          <b>Calculation:</b> Failed workflow runs / Total workflow runs.<br>
+          <b>Good:</b> &lt; 5% failure rate.<br>
+          <i>Ref: SPACE Framework (Efficiency)</i>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-title">Small/Large PR Ratio</div>
+        <div class="metric-value" id="kpi-pr-ratio">0.0</div>
+        <div class="metric-desc">
+          <b>Calculation:</b> Ratio of PRs &lt;200 LOC vs PRs &gt;200 LOC.<br>
+          <b>Good:</b> &gt; 2.0 (High frequency of small batch sizes).<br>
+          <i>Ref: DORA Batch Size Optimization</i>
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-title">Avg Comments per PR</div>
+        <div class="metric-value" id="kpi-review-comments">0.0</div>
+        <div class="metric-desc">
+          <b>Calculation:</b> Total human review comments / Total reviewed PRs.<br>
+          <b>Good:</b> 1-3 comments (Signifies code clarity & alignment).<br>
+          <i>Ref: SPACE (Collaboration & Quality)</i>
+        </div>
+      </div>
+    </div>
+
     <!-- Row 1: Distributions -->
     <div class="charts-grid">
       <div class="chart-card">
         <h3>Repo Distribution by Capability</h3>
+        <div class="chart-desc">
+          <b>Calculation:</b> Total repository count grouped by assigned business capability.<br>
+          <b>Good:</b> Balanced distribution avoiding monolithic silos. Helps identify under-resourced capabilities.<br>
+          <i>Ref: Organizational Alignment</i>
+        </div>
         <div class="chart-container"><canvas id="chart-capability"></canvas></div>
       </div>
       <div class="chart-card">
         <h3>Infrastructure vs Application</h3>
+        <div class="chart-desc">
+          <b>Calculation:</b> Ratio of IaC/configuration repositories vs core application code.<br>
+          <b>Good:</b> High IaC ratio implies mature GitOps and automated infrastructure provisioning.<br>
+          <i>Ref: Platform Engineering Maturity</i>
+        </div>
         <div class="chart-container"><canvas id="chart-type"></canvas></div>
-      </div>
-      <div class="chart-card">
-        <h3>Verification Status</h3>
-        <div class="chart-container"><canvas id="chart-status"></canvas></div>
       </div>
     </div>
 
-    <h2 class="section-title">Development Activity</h2>
-
-    <!-- Row 2: Developer Stats -->
+    <!-- Row 2: Trends (Executive Priorities) -->
+    <div
+      style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); margin: 40px 0 20px 0; padding-bottom: 10px;">
+      <h2 class="section-title" style="margin: 0; border-bottom: none; padding-bottom: 0;">Historical Trends (DORA)</h2>
+      <select id="trend-grouping" onchange="updateCharts()"
+        style="padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text-main); font-weight: 500; cursor: pointer;">
+        <option value="Repository">Group by Repository</option>
+        <option value="Capability">Group by Capability</option>
+      </select>
+    </div>
     <div class="charts-grid">
-      <div class="chart-card" style="grid-column: span 2;">
-        <h3>Commits per Repository</h3>
-        <div class="chart-container"><canvas id="chart-commits-repo"></canvas></div>
+      <div class="chart-card" style="grid-column: span 6;">
+        <h3>Lead Time to Production Trend (Days)</h3>
+        <div class="chart-desc">
+          <b>Calculation:</b> First commit on a merged PR to successful deployment.<br>
+          <b>Good:</b> Downward trend highlighting increased pipeline efficiency (DORA).
+        </div>
+        <div class="chart-container"><canvas id="chart-trend-leadtime"></canvas></div>
+      </div>
+      <div class="chart-card" style="grid-column: span 6;">
+        <h3>Mean Time To Recover-Security Remediation Trend (Hours)</h3>
+        <div class="chart-desc">
+          <b>Calculation:</b> Average time to remediate Critical/High security alerts over time.<br>
+          <b>Good:</b> Flat or downward line below SLA threshold (DORA).
+        </div>
+        <div class="chart-container"><canvas id="chart-trend-mttr"></canvas></div>
+      </div>
+      <div class="chart-card" style="grid-column: span 6;">
+        <h3>Commit Volume Concentration</h3>
+        <div class="chart-desc">
+          <b>Calculation:</b> Trailing volume of commits over the selected date range.<br>
+          <b>Good:</b> Stable continuous delivery rather than massive "batch" spikes at the end of sprints.<br>
+          <i>Ref: CI/CD Flow Stability</i>
+        </div>
+        <div class="chart-container"><canvas id="chart-trend-commits"></canvas></div>
+      </div>
+      <div class="chart-card" style="grid-column: span 6;">
+        <h3>PR Merge Velocity</h3>
+        <div class="chart-desc">
+          <b>Calculation:</b> Trailing volume of successfully merged Pull Requests.<br>
+          <b>Good:</b> Steady, high frequency of merges signifies small batch sizes and reduced integration friction
+          (Elite).<br>
+          <i>Ref: DORA (Deployment Frequency Proxy)</i>
+        </div>
+        <div class="chart-container"><canvas id="chart-trend-prs"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Row 3: Development Activity -->
+    <h2 class="section-title">Development Activity</h2>
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>Code Churn vs First Review Time (Hours)</h3>
+        <div class="chart-desc">
+          <b>Calculation:</b> Post-review commits (Y) vs Wait time to first response (X). Bubble size = PR Size.<br>
+          <b>Good:</b> Low wait times (&lt; 4h) and minimal rework (0-2 commits). <b>Green Zone</b> is elite.<br>
+          <i>Ref: SPACE Framework (Developer Friction & Well-being)</i>
+        </div>
+        <div class="chart-container"><canvas id="chart-churn"></canvas></div>
       </div>
       <div class="chart-card">
-        <h3>Committers vs PR Authors</h3>
+        <h3>Committers vs PR Authors (Collaboration)</h3>
+        <div class="chart-desc">
+          <b>Calculation:</b> Number of unique committers vs unique PR authors per repository.<br>
+          <b>Good:</b> Ratio closer to 1:1. A massive gap (many committers, few PR authors) indicates potential
+          bottlenecks in code review permissions or siloed merging practices.<br>
+          <i>Ref: SPACE (Collaboration & Safe Practices)</i>
+        </div>
         <div class="chart-container"><canvas id="chart-devs"></canvas></div>
       </div>
     </div>
@@ -354,28 +486,47 @@
     <!-- Row 3: Advanced Metrics -->
     <h2 class="section-title">Velocity & Quality</h2>
     <div class="charts-grid">
-      <div class="chart-card" style="grid-column: span 2;">
+      <div class="chart-card">
         <h3>Time Analysis: Coding vs Review</h3>
+        <div class="chart-desc">
+          <b>Calculation:</b> Active Coding Hours (First Commit to PR) + Review Time (PR Open to Merge) = True Lead
+          Time.<br>
+          <b>Good:</b> Short cycles for both. When Review Time significantly exceeds Coding Time, it represents a
+          systemic flow blockage.<br>
+          <i>Ref: SPACE Framework (Flow & Efficiency)</i>
+        </div>
         <div class="chart-container"><canvas id="chart-time"></canvas></div>
       </div>
       <div class="chart-card">
         <h3>Review Efficiency (Time vs LOC)</h3>
+        <div class="chart-desc">
+          <b>Calculation:</b> Review hours logged per line of code changed. Bubble Size = Time per LOC inefficiency.<br>
+          <b>Good:</b> Small, fast changes. Extremely long review times on tiny PRs indicates severe organizational
+          friction or cognitive overload.<br>
+          <i>Ref: SPACE Framework (Cognitive Load & Collaboration)</i>
+        </div>
         <div class="chart-container"><canvas id="chart-scatter"></canvas></div>
       </div>
     </div>
 
-    <!-- Row 4: Trends -->
-    <h2 class="section-title">Historical Trends</h2>
+    <!-- Row 3.5: AI Proxies -->
+    <h2 class="section-title">Generative AI Proxies</h2>
     <div class="charts-grid">
-      <div class="chart-card" style="grid-column: span 3;">
-        <h3>Commits Over Time</h3>
-        <div class="chart-container"><canvas id="chart-trend-commits"></canvas></div>
-      </div>
-      <div class="chart-card" style="grid-column: span 3;">
-        <h3>Merged PRs Over Time</h3>
-        <div class="chart-container"><canvas id="chart-trend-prs"></canvas></div>
+      <div class="chart-card" style="grid-column: span 6;">
+        <h3>Test Scaffold (Junit) vs Quality</h3>
+        <div class="chart-desc">
+          <b>Calculation:</b> Total Unit Tests (SQ) [X-Axis] vs Change Failure Rate (%) [Y-Axis]. Bubble Size = Coding
+          Velocity (LOC/Hr).<br>
+          <b>Good:</b> High Test Scaffold correlating with Low CFR. High velocity paired with low CFR signifies
+          successful
+          implementation of AI copilots for boilerplate generation.<br>
+          <i>Ref: AI Developer Productivity Proxies</i>
+        </div>
+        <div class="chart-container"><canvas id="chart-ai-proxy"></canvas></div>
       </div>
     </div>
+
+
 
     <!-- Tables -->
     <h2 class="section-title">Detailed Data</h2>
@@ -386,10 +537,16 @@
             <th>Repository</th>
             <th>Capability</th>
             <th>Commits</th>
-            <th>Merged PRs</th>
-            <th>Branch Dur (Hrs)</th>
-            <th>Review (Hrs)</th>
-            <th>Last Updated</th>
+            <th>Lead Time (Hrs)</th>
+            <th>Lead Prod (d)</th>
+            <th>CI/CD Failures</th>
+            <th>CFR (%)</th>
+            <th>Review (h)</th>
+            <th>Churn (Commits)</th>
+            <th>SQ Security</th>
+            <th>SQ Tech Debt (Days)</th>
+            <th>SQ Unit Tests</th>
+            <th>Last Run</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -452,6 +609,22 @@
           row['Avg Coding Time (Hours)'] = parseFloat(row['Avg Coding Time (Hours)']) || 0;
           row['Avg LOC Changed'] = parseFloat(row['Avg LOC Changed']) || 0;
           row['Avg Review Time / LOC'] = parseFloat(row['Avg Review Time / LOC']) || 0;
+          row['MTTR-Sec (Hours)'] = parseFloat(row['MTTR-Sec (Hours)']) || 0;
+          row['Successful Deployments'] = parseInt(row['Successful Deployments']) || 0;
+          row['Avg Review Comments per PR'] = parseFloat(row['Avg Review Comments per PR']) || 0;
+          row['Avg Wait Time for First Review (Hours)'] = parseFloat(row['Avg Wait Time for First Review (Hours)']) || 0;
+          row['Avg PR Description Length (Chars)'] = parseInt(row['Avg PR Description Length (Chars)']) || 0;
+          row['Small to Large PR Ratio'] = parseFloat(row['Small to Large PR Ratio']) || 0;
+          row['Change Failure Rate (%)'] = parseFloat(row['Change Failure Rate (%)']) || 0;
+          row['True Lead Time for Changes (Hours)'] = parseFloat(row['True Lead Time for Changes (Hours)']) || 0;
+          row['Lead Time to Production (Days)'] = parseFloat(row['Lead Time to Production (Days)']) || 0;
+          row['CI/CD Failure Rate (%)'] = parseFloat(row['CI/CD Failure Rate (%)']) || 0;
+          row['CI/CD Avg Execution Time (Mins)'] = parseFloat(row['CI/CD Avg Execution Time (Mins)']) || 0;
+          row['Avg Code Churn (Commits)'] = parseFloat(row['Avg Code Churn (Commits)']) || 0;
+          row['SQ Security Rating'] = row['SQ Security Rating'] || "N/A";
+          row['SQ Technical Debt (Days)'] = parseFloat(row['SQ Technical Debt (Days)']) || 0;
+          row['SQ Code Smells'] = parseInt(row['SQ Code Smells'] || 0, 10);
+          row['SQ Vulnerabilities'] = parseInt(row['SQ Vulnerabilities'] || 0, 10);
 
           // Date parsing for filter (handle missing timestamp with fallback)
           if (row['Timestamp'] && row['Timestamp'].trim()) {
@@ -707,6 +880,31 @@
 
       document.getElementById('kpi-devs').innerText = uniqueCommitters.size + fallbackCommitters;
       document.getElementById('kpi-pr-authors').innerText = uniquePRAuthors.size + fallbackAuthors;
+
+      // New KPIs
+      const mttrTotal = latestData.reduce((acc, d) => acc + d['MTTR-Sec (Hours)'], 0);
+      document.getElementById('kpi-mttr').innerText = latestData.length > 0 ? (mttrTotal / latestData.length).toFixed(1) : "0.0";
+
+      // Calculate Averages for Rates
+      let totalCFR = 0;
+      let reposWithDeploys = 0;
+
+      latestData.forEach(d => {
+        if (d['Successful Deployments'] > 0) {
+          reposWithDeploys++;
+          totalCFR += d['Change Failure Rate (%)'];
+        }
+      });
+      document.getElementById('kpi-cfr').innerText = reposWithDeploys > 0 ? (totalCFR / reposWithDeploys).toFixed(1) + "%" : "0.0%";
+
+      const totalCIFail = latestData.reduce((acc, d) => acc + d['CI/CD Failure Rate (%)'], 0);
+      document.getElementById('kpi-ci-fail').innerText = latestData.length > 0 ? (totalCIFail / latestData.length).toFixed(1) + "%" : "0.0%";
+
+      const revReqTotal = latestData.reduce((acc, d) => acc + d['Avg Review Comments per PR'], 0);
+      document.getElementById('kpi-review-comments').innerText = latestData.length > 0 ? (revReqTotal / latestData.length).toFixed(1) : "0.0";
+
+      const rRatio = latestData.reduce((acc, d) => acc + d['Small to Large PR Ratio'], 0);
+      document.getElementById('kpi-pr-ratio').innerText = latestData.length > 0 ? (rRatio / latestData.length).toFixed(2) : "0.0";
     }
 
     function updateCharts() {
@@ -723,30 +921,17 @@
       latestData.forEach(d => { typeCount[d['Repo Type']] = (typeCount[d['Repo Type']] || 0) + 1; });
       renderChart('chart-type', 'pie', Object.keys(typeCount), [{ data: Object.values(typeCount), backgroundColor: ['#f8c555', '#0969da'] }]);
 
-      // 3. Status (Bar)
-      const statCount = {};
-      latestData.forEach(d => { statCount[d['Verification Status']] = (statCount[d['Verification Status']] || 0) + 1; });
-      renderChart('chart-status', 'bar', Object.keys(statCount), [{ label: 'Status', data: Object.values(statCount), backgroundColor: '#2da44e' }]);
-
-      // 4. Commits per Repo (Bar)
-      const sortedCommits = [...latestData].sort((a, b) => b['Total Commits'] - a['Total Commits']);
-      renderChart('chart-commits-repo', 'bar', sortedCommits.map(d => d.Repository), [{
-        label: 'Total Commits',
-        data: sortedCommits.map(d => d['Total Commits']),
-        backgroundColor: '#0969da'
-      }]);
-
       // 5. Devs vs Authors (Grouped Bar)
       renderChart('chart-devs', 'bar', latestData.map(d => d.Repository), [
         { label: 'Committers', data: latestData.map(d => d['Distinct Committers Count']), backgroundColor: '#2da44e' },
         { label: 'PR Authors', data: latestData.map(d => d['Distinct PR Authors Count']), backgroundColor: '#cf222e' }
-      ]);
+      ], {}, 'Repository', 'Developer Count');
 
       // 6. Time Analysis (Stacked)
       renderChart('chart-time', 'bar', latestData.map(d => d.Repository), [
         { label: 'Coding Time (Hr)', data: latestData.map(d => d['Avg Coding Time (Hours)']), backgroundColor: '#0969da', stack: 'Stack 0' },
         { label: 'Review Time (Hr)', data: latestData.map(d => d['Avg Review Time (Hours)']), backgroundColor: '#f8c555', stack: 'Stack 0' }
-      ]);
+      ], {}, 'Repository', 'Time (Hours)');
 
       // 7. Scatter (Review vs LOC)
       const scatterData = latestData.map(d => ({
@@ -779,15 +964,118 @@
         });
       }
 
+      // New: Code Churn vs First Review 
+      const churnData = latestData.map(d => ({
+        x: d['Avg Wait Time for First Review (Hours)'] || 0,
+        y: d['Avg Code Churn (Commits)'] || 0,
+        r: Math.min(25, Math.max(5, (d['Small to Large PR Ratio'] * 5))) // Radius based on PR sizes
+      })).filter(d => d.x > 0 || d.y > 0);
+
+      const ctxChurn = document.getElementById('chart-churn');
+      if (ctxChurn) {
+        if (chartInstances['chart-churn']) chartInstances['chart-churn'].destroy();
+        chartInstances['chart-churn'] = new Chart(ctxChurn, {
+          type: 'bubble',
+          data: {
+            datasets: [{
+              label: 'Wait Time vs Code Churn',
+              data: churnData,
+              backgroundColor: 'rgba(54, 162, 235, 0.6)'
+            }]
+          },
+          options: {
+            maintainAspectRatio: false,
+            responsive: true,
+            scales: {
+              x: { title: { display: true, text: 'First Review Wait (Hrs)' }, max: 24 }, // Bounded 
+              y: { title: { display: true, text: 'Rework (Commits Added)' }, max: 10 }
+            },
+            plugins: {
+              annotation: {
+                annotations: {
+                  boxElite: {
+                    type: 'box',
+                    xMin: -1, xMax: 4,
+                    yMin: -1, yMax: 2,
+                    backgroundColor: 'rgba(45, 164, 78, 0.15)', // Green Elite
+                    borderWidth: 0
+                  },
+                  boxWarning: {
+                    type: 'box',
+                    xMin: 4, xMax: 12,
+                    yMin: -1, yMax: 10,
+                    backgroundColor: 'rgba(248, 197, 85, 0.15)', // Yellow Warning
+                    borderWidth: 0
+                  },
+                  boxWarning2: {
+                    type: 'box',
+                    xMin: -1, xMax: 4,
+                    yMin: 2, yMax: 10,
+                    backgroundColor: 'rgba(248, 197, 85, 0.15)', // Yellow Warning bounds
+                    borderWidth: 0
+                  },
+                  boxPoor: {
+                    type: 'box',
+                    xMin: 12, xMax: 100,
+                    yMin: 0, yMax: 100,
+                    backgroundColor: 'rgba(207, 34, 46, 0.1)', // Red Poor
+                    borderWidth: 0
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+
+      // New: AI Proxy Scatter 
+      const aiProxyData = latestData.map(d => ({
+        x: parseInt(d['SQ Unit Tests']) || 0,
+        y: parseFloat(d['Change Failure Rate (%)']) || 0,
+        r: Math.min(25, Math.max(5, (parseFloat(d['Coding Velocity (LOC/Hr)']) / 5))) // Radius based on coding velocity
+      })).filter(d => d.x > 0 || d.y > 0 || d.r > 5);
+
+      const ctxAI = document.getElementById('chart-ai-proxy');
+      if (ctxAI) {
+        if (chartInstances['chart-ai-proxy']) chartInstances['chart-ai-proxy'].destroy();
+        chartInstances['chart-ai-proxy'] = new Chart(ctxAI, {
+          type: 'bubble',
+          data: {
+            datasets: [{
+              label: 'Unit Tests vs CFR',
+              data: aiProxyData,
+              backgroundColor: 'rgba(153, 102, 255, 0.6)'
+            }]
+          },
+          options: {
+            maintainAspectRatio: false,
+            responsive: true,
+            scales: {
+              x: { title: { display: true, text: 'Total Unit Tests' } },
+              y: { title: { display: true, text: 'Change Failure Rate (%)' } }
+            },
+            plugins: {
+              tooltip: {
+                callbacks: {
+                  label: function (ctx) {
+                    // Rough reverse-math to display LOC velocity realistically
+                    const trueVel = (ctx.raw.r * 5).toFixed(1);
+                    return `Tests: ${ctx.raw.x} | CFR: ${ctx.raw.y}% | Vel: ~${trueVel} LOC/Hr`;
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+
       // 8. Trends (Line)
       // Force X-Axis to match selected range
       const startDateStr = document.getElementById('filter-start-date').value;
       const endDateStr = document.getElementById('filter-end-date').value;
 
-      // Use filteredHistory for repos list, but filteredActivity could also work.
-      // Let's use filteredActivityData.map(d => d.Repository) to ensure we only show repos with activity in this range?
-      // Or keep strict filter list. Sticking to filteredData (snapshot) repos is safer for consistency with dropdown.
-      const distinctRepos = [...new Set(filteredData.map(d => d.Repository))];
+      const trendGrouping = document.getElementById('trend-grouping') ? document.getElementById('trend-grouping').value : 'Repository';
+      const distinctGroups = [...new Set(filteredData.map(d => d[trendGrouping]))].filter(Boolean);
 
       // Generate full date range labels
       const dateLabels = [];
@@ -805,12 +1093,12 @@
       }
 
       const createTrendDatasets = (metricType) => {
-        return distinctRepos.map((repo, idx) => {
+        return distinctGroups.map((groupVal, idx) => {
           // Aggregate counts per day from filteredActivityData
           const dailyCounts = {};
 
           filteredActivityData.forEach(d => {
-            if (d.Repository !== repo) return;
+            if (d[trendGrouping] !== groupVal) return;
 
             // Check Action type
             let match = false;
@@ -828,7 +1116,7 @@
           const data = dateLabels.map(date => dailyCounts[date] || 0);
 
           return {
-            label: repo,
+            label: groupVal,
             data: data,
             borderColor: colors[idx % colors.length],
             fill: false,
@@ -838,16 +1126,83 @@
         });
       };
 
+      const createMetricTrendDatasets = (metricName) => {
+        return distinctGroups.map((groupVal, idx) => {
+          const data = dateLabels.map(date => {
+            const snapshots = filteredData.filter(d =>
+              d[trendGrouping] === groupVal &&
+              d._date.toISOString().split('T')[0] === date
+            );
+            if (snapshots.length > 0) {
+              return snapshots.reduce((acc, s) => acc + s[metricName], 0) / snapshots.length;
+            }
+            return null;
+          });
+
+          return {
+            label: groupVal,
+            data: data,
+            borderColor: colors[idx % colors.length],
+            fill: false,
+            tension: 0.2,
+            spanGaps: true
+          };
+        });
+      };
+
+      // Annotations for thresholds
+      const leadTimePlugins = {
+        annotation: {
+          annotations: {
+            lineElite: {
+              type: 'line', yMin: 14, yMax: 14, borderColor: 'rgba(45, 164, 78, 0.8)', borderWidth: 2, borderDash: [5, 5],
+              label: { content: 'Elite (<14d)', display: true, position: 'end', backgroundColor: 'rgba(45, 164, 78, 0.8)', color: 'white' }
+            },
+            linePoor: {
+              type: 'line', yMin: 30, yMax: 30, borderColor: 'rgba(207, 34, 46, 0.8)', borderWidth: 2, borderDash: [5, 5],
+              label: { content: 'Poor (>30d)', display: true, position: 'start', backgroundColor: 'rgba(207, 34, 46, 0.8)', color: 'white' }
+            }
+          }
+        }
+      };
+
+      const mttrPlugins = {
+        annotation: {
+          annotations: {
+            lineSLA: {
+              type: 'line', yMin: 96, yMax: 96, borderColor: 'rgba(207, 34, 46, 0.8)', borderWidth: 2, borderDash: [5, 5],
+              label: { content: 'Target (96h)', display: true, position: 'end', backgroundColor: 'rgba(207, 34, 46, 0.8)', color: 'white' }
+            }
+          }
+        }
+      };
+
       // Use dateLabels for X-axis
-      renderChart('chart-trend-commits', 'line', dateLabels, createTrendDatasets('Commits'));
-      renderChart('chart-trend-prs', 'line', dateLabels, createTrendDatasets('PRs'));
+      renderChart('chart-trend-commits', 'line', dateLabels, createTrendDatasets('Commits'), {}, 'Date', 'Number of Commits');
+      renderChart('chart-trend-prs', 'line', dateLabels, createTrendDatasets('PRs'), {}, 'Date', 'Number of PRs');
+      renderChart('chart-trend-leadtime', 'line', dateLabels, createMetricTrendDatasets('Lead Time to Production (Days)'), leadTimePlugins, 'Date', 'Days');
+      renderChart('chart-trend-mttr', 'line', dateLabels, createMetricTrendDatasets('MTTR-Sec (Hours)'), mttrPlugins, 'Date', 'Hours');
     }
 
-    function renderChart(id, type, labels, datasets) {
+    function renderChart(id, type, labels, datasets, customPlugins = {}, xAxisTitle = '', yAxisTitle = '') {
       const ctx = document.getElementById(id);
       if (!ctx) return;
 
       if (chartInstances[id]) chartInstances[id].destroy();
+
+      const scalesConfig = {
+        y: {
+          beginAtZero: true,
+          title: { display: !!yAxisTitle, text: yAxisTitle }
+        },
+        x: {
+          ticks: { autoSkip: true, maxTicksLimit: 10 },
+          title: { display: !!xAxisTitle, text: xAxisTitle }
+        }
+      };
+
+      // Pie and Doughnut charts don't use X/Y axes
+      const useScales = type !== 'pie' && type !== 'doughnut';
 
       chartInstances[id] = new Chart(ctx, {
         type: type,
@@ -855,13 +1210,8 @@
         options: {
           maintainAspectRatio: false,
           responsive: true,
-          plugins: { legend: { position: 'bottom' } },
-          scales: {
-            y: { beginAtZero: true },
-            x: {
-              ticks: { autoSkip: true, maxTicksLimit: 10 }
-            }
-          }
+          plugins: { legend: { position: 'bottom' }, ...customPlugins },
+          scales: useScales ? scalesConfig : undefined
         }
       });
     }
@@ -872,14 +1222,20 @@
       latestData.forEach(d => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-                    <td><strong>${d.Repository}</strong></td>
-                    <td>${d.Capability}</td>
-                    <td>${d['Total Commits']}</td>
-                    <td>${d['Total Merged PRs']}</td>
-                    <td>${d['Avg Branch Duration (Hours)'].toFixed(1)}</td>
-                    <td>${d['Avg Review Time (Hours)'].toFixed(1)}</td>
-                    <td>${d._date.toLocaleString()}</td>
-                `;
+            <td><strong>${d.Repository}</strong></td>
+            <td>${d.Capability || 'N/A'}</td>
+            <td>${d['Total Commits']}</td>
+            <td>${d['True Lead Time for Changes (Hours)'].toFixed(1)}</td>
+            <td style="font-weight: bold; color: ${d['Lead Time to Production (Days)'] < 14 ? 'green' : 'var(--danger-color)'}">${d['Lead Time to Production (Days)'].toFixed(1)}</td>
+            <td>${d['CI/CD Failure Rate (%)'].toFixed(1)}%</td>
+            <td>${d['Change Failure Rate (%)'].toFixed(1)}%</td>
+            <td>${d['Avg Review Time (Hours)'].toFixed(1)}</td>
+            <td>${d['Avg Code Churn (Commits)'].toFixed(1)}</td>
+            <td style="font-weight: bold; color: ${d['SQ Security Rating'] === 'A' ? 'green' : d['SQ Security Rating'] === 'B' ? 'var(--primary-color)' : 'var(--danger-color)'}">${d['SQ Security Rating'] || 'N/A'}</td>
+            <td>${d['SQ Technical Debt (Days)'] ? parseFloat(d['SQ Technical Debt (Days)']).toFixed(1) : 'N/A'}</td>
+            <td>${d['SQ Unit Tests'] || '0'}</td>
+            <td>${d._date.toLocaleString()}</td>
+        `;
         tbody.appendChild(tr);
       });
     }

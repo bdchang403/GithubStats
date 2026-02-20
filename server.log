@@ -1,124 +1,82 @@
 Server running at http://localhost:8080/
 Serving index.html by default.
 GET /
-GET /github_stats_history.csv
-GET /favicon.ico
-GET /favicon.ico
-GET /favicon.ico
-POST /api/update
-GET /
-GET /github_stats_history.csv
-GET /favicon.ico
-GET /
-GET /github_stats_history.csv
-GET /favicon.ico
-GET /index.html
-GET /
-GET /github_stats_history.csv
-GET /favicon.ico
-GET /favicon.ico
-GET /favicon.ico
-GET /dashboard.html
-GET /favicon.ico
-GET /
-GET /github_stats_history.csv
-GET /favicon.ico
-GET /server.js
-POST /api/trigger-update
-Triggering update via API...
-stdout: Loading env from /home/bdchang/GithubStats/.env
-Starting GitHub Stats Collector (Node.js)...
-Processing facebook/react...
-  Fetching commits since 2026-02-18T18:53:49Z
-Processing hashicorp/terraform...
-  Fetching commits since 2026-02-18T19:27:16Z
-Processing expressjs/express...
-  Fetching commits since 2026-02-14T17:25:36Z
-Processing google/guava...
-  Fetching commits since 2026-02-18T19:02:21Z
-Processing vuejs/vue...
-  Fetching commits since 2024-10-10T07:24:14Z
-Saved github_stats_output.csv
-Appended to github_stats_history.csv
-Saved 5 events to github_activity_log.csv
-
-GET /
-GET /github_stats_history.csv
-GET /favicon.ico
-POST /api/trigger-update
-Triggering update via API...
-stdout: Loading env from /home/bdchang/GithubStats/.env
-Starting GitHub Stats Collector (Node.js)...
-Processing facebook/react...
-  Fetching commits since 2026-02-18T18:53:49Z
-Processing hashicorp/terraform...
-  Fetching commits since 2026-02-18T19:27:16Z
-Processing expressjs/express...
-  Fetching commits since 2026-02-14T17:25:36Z
-Processing google/guava...
-  Fetching commits since 2026-02-18T19:02:21Z
-Processing vuejs/vue...
-  Fetching commits since 2024-10-10T07:24:14Z
-Saved github_stats_output.csv
-Appended to github_stats_history.csv
-Saved 5 events to github_activity_log.csv
-
-GET /
-GET /github_stats_history.csv
-GET /favicon.ico
-GET /favicon.ico
-GET /favicon.ico
-GET /
-GET /
-GET /github_stats_history.csv
-GET /favicon.ico
-POST /api/trigger-update
-Triggering update via API...
-stdout: Loading env from /home/bdchang/GithubStats/.env
-Starting GitHub Stats Collector (Node.js)...
-Processing facebook/react...
-  Fetching commits since 2026-02-18T18:53:49Z
-Processing hashicorp/terraform...
-  Fetching commits since 2026-02-18T19:27:16Z
-Processing expressjs/express...
-  Fetching commits since 2026-02-14T17:25:36Z
-Processing google/guava...
-  Fetching commits since 2026-02-18T19:02:21Z
-Processing vuejs/vue...
-  Fetching commits since 2024-10-10T07:24:14Z
-Saved github_stats_output.csv
-Appended to github_stats_history.csv
-Saved 7 events to github_activity_log.csv
-
-GET /
-GET /github_stats_history.csv
-GET /favicon.ico
-GET /
-GET /github_stats_history.csv
-GET /favicon.ico
-POST /api/trigger-update
-Triggering update via API...
-stdout: Loading env from /home/bdchang/GithubStats/.env
-Starting GitHub Stats Collector (Node.js)...
-Processing facebook/react...
-  Fetching commits since 2026-02-18T18:53:49Z
-Processing hashicorp/terraform...
-  Fetching commits since 2026-02-18T19:27:16Z
-Processing expressjs/express...
-  Fetching commits since 2026-02-14T17:25:36Z
-Processing google/guava...
-  Fetching commits since 2026-02-18T19:02:21Z
-Processing vuejs/vue...
-  Fetching commits since 2024-10-10T07:24:14Z
-Saved github_stats_output.csv
-Appended to github_stats_history.csv
-Saved 5 events to github_activity_log.csv
-
-GET /
+GET /vendor/chart.min.js
+GET /vendor/papaparse.min.js
+GET /github_activity_log.csv
 GET /github_stats_history.csv
 GET /favicon.ico
 GET /
 GET /vendor/chart.min.js
 GET /vendor/papaparse.min.js
 GET /github_stats_history.csv
+GET /github_activity_log.csv
+GET /favicon.ico
+GET /
+GET /vendor/papaparse.min.js
+GET /vendor/chart.min.js
+GET /github_activity_log.csv
+GET /github_stats_history.csv
+GET /favicon.ico
+GET /favicon.ico
+GET /favicon.ico
+GET /
+GET /vendor/chart.min.js
+GET /vendor/papaparse.min.js
+GET /github_stats_history.csv
+GET /github_activity_log.csv
+GET /favicon.ico
+GET /
+GET /vendor/chart.min.js
+GET /vendor/papaparse.min.js
+GET /github_stats_history.csv
+GET /github_activity_log.csv
+GET /favicon.ico
+GET /
+GET /vendor/chart.min.js
+GET /vendor/papaparse.min.js
+GET /github_stats_history.csv
+GET /github_activity_log.csv
+GET /favicon.ico
+GET /
+GET /vendor/chart.min.js
+GET /vendor/papaparse.min.js
+GET /github_stats_history.csv
+GET /github_activity_log.csv
+GET /favicon.ico
+GET /
+GET /vendor/chart.min.js
+GET /vendor/papaparse.min.js
+GET /github_stats_history.csv
+GET /github_activity_log.csv
+GET /favicon.ico
+GET /
+GET /vendor/chart.min.js
+GET /vendor/papaparse.min.js
+GET /github_stats_history.csv
+GET /github_activity_log.csv
+GET /favicon.ico
+GET /
+GET /vendor/chart.min.js
+GET /vendor/papaparse.min.js
+GET /github_stats_history.csv
+GET /github_activity_log.csv
+GET /favicon.ico
+GET /
+GET /vendor/chart.min.js
+GET /vendor/papaparse.min.js
+GET /github_stats_history.csv
+GET /github_activity_log.csv
+GET /favicon.ico
+GET /
+GET /vendor/chart.min.js
+GET /vendor/papaparse.min.js
+GET /github_stats_history.csv
+GET /github_activity_log.csv
+GET /favicon.ico
+GET /
+GET /vendor/chart.min.js
+GET /vendor/papaparse.min.js
+GET /github_stats_history.csv
+GET /github_activity_log.csv
 GET /favicon.ico

@@ -1,0 +1,2 @@
+Repository,Capability,SonarQubeProjectKey
+# Note: For SonarQubeProjectKey, you can supply multiple keys delimited by pipe (|) or semicolon (;) if a repo contains multiple folders/projects.

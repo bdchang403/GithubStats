@@ -36,6 +36,10 @@ loadEnv();
 const GITHUB_TOKEN = ENV.GITHUB_TOKEN;
 const API_BASE_URL = (ENV.GITHUB_API_BASE_URL || 'https://api.github.com').replace(/\/$/, '');
 
+// The maximum number of recent PRs to query per repository.
+// High values exponentially increase API load due to downstream files/commits/reviews queries per PR.
+const maxPrsLimit = parseInt(ENV.MAX_PRS_TO_ANALYZE || "30", 10);
+
 // --- External Integration Config ---
 let integrationConfig = null;
 try {
@@ -908,10 +912,13 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
     let totalActiveCodingLOC = 0;
     let prsWithCodingVelocity = 0;
 
-    // Fetch up to 100 recent closed PRs for these metrics
-    const recentPRs = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/pulls?state=closed&per_page=100&sort=updated&direction=desc`, 1);
+    // Fetch up to 100 recent closed PRs, but we will slice it to reduce heavy API load
+    const recentPRsRaw = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/pulls?state=closed&per_page=${Math.min(100, maxPrsLimit)}&sort=updated&direction=desc`, Math.ceil(maxPrsLimit / 100));
+    let recentPRs = [];
 
-    if (recentPRs && Array.isArray(recentPRs)) {
+    if (recentPRsRaw && Array.isArray(recentPRsRaw)) {
+        recentPRs = recentPRsRaw.slice(0, maxPrsLimit);
+
         // Concurrency control: batch process PR reviews
         const BATCH_SIZE = 5;
         for (let i = 0; i < recentPRs.length; i += BATCH_SIZE) {

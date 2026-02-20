@@ -183,7 +183,10 @@ async function fetchGitHub(url) {
             }
 
             if (!response.ok) {
-                logError(`Error ${response.status} fetch ${url}`);
+                // Suppress 404 console noise, as the script intentionally probes for optional config files (CICD.yml, CT.yml)
+                if (response.status !== 404) {
+                    logError(`Error ${response.status} fetch ${url}`);
+                }
                 return null;
             }
 

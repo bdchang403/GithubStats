@@ -229,9 +229,14 @@ async function checkExternalDefect(text) {
                 if (response.ok) {
                     const data = await response.json();
                     const issueType = data.fields && data.fields.issuetype ? data.fields.issuetype.name : "Unknown";
-                    return integrationConfig.jira.mappings.defectTypes.some(t => t.toLowerCase() === issueType.toLowerCase());
+                    const isDefect = integrationConfig.jira.mappings.defectTypes.some(t => t.toLowerCase() === issueType.toLowerCase());
+
+                    let createdAt = data.fields.created ? new Date(data.fields.created) : null;
+                    let resolvedAt = data.fields.resolutiondate ? new Date(data.fields.resolutiondate) : null;
+
+                    return { isDefect, createdAt, resolvedAt };
                 }
-                return false;
+                return { isDefect: false, createdAt: null, resolvedAt: null };
             } catch (e) {
                 logError(`Jira API error for ${issueKey}: ${e.message}`);
                 return "Unverified";
@@ -270,10 +275,16 @@ async function checkExternalDefect(text) {
                 if (response.ok) {
                     const json = await response.json();
                     if (json.result && json.result.length > 0) {
-                        return integrationConfig.serviceNow.mappings.defectTypes.includes(table.toLowerCase());
+                        const incident = json.result[0];
+                        const isDefect = integrationConfig.serviceNow.mappings.defectTypes.includes(table.toLowerCase());
+
+                        let createdAt = incident.sys_created_on ? new Date(incident.sys_created_on + " UTC") : null;
+                        let resolvedAt = incident.resolved_at ? new Date(incident.resolved_at + " UTC") : (incident.closed_at ? new Date(incident.closed_at + " UTC") : null);
+
+                        return { isDefect, createdAt, resolvedAt };
                     }
                 }
-                return false;
+                return { isDefect: false, createdAt: null, resolvedAt: null };
             } catch (e) {
                 logError(`ServiceNow API error for ${issueKey}: ${e.message}`);
                 return "Unverified";
@@ -784,16 +795,26 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
 
             if (causedByDeploy) {
                 const payloadText = (issue.title || "") + " " + (issue.body || "");
-                const isDefect = await checkExternalDefect(payloadText);
+                const defectData = await checkExternalDefect(payloadText);
 
-                if (isDefect === "Unverified" || isDefect === null) {
+                if (defectData === "Unverified" || defectData === null) {
                     // Fallback to GitHub labels
                     const labels = issue.labels.map(l => l.name.toLowerCase());
                     if (labels.some(l => ["bug", "hotfix", "incident"].includes(l))) {
                         failureIssues++;
                     }
-                } else if (isDefect === true) {
+                } else if (defectData && defectData.isDefect === true) {
                     failureIssues++;
+
+                    // Factor into MTTR-Sec if we have creation and resolution times
+                    if (defectData.createdAt && defectData.resolvedAt) {
+                        const t0 = defectData.createdAt;
+                        const t1 = defectData.resolvedAt;
+                        if (t1 > t0) {
+                            mttrAccum += (t1 - t0) / (1000 * 3600);
+                            mttrCount++;
+                        }
+                    }
                 }
             }
         }

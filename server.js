@@ -29,20 +29,46 @@ http.createServer((req, res) => {
 
     // API: Trigger Update (Local only)
     if (req.url === '/api/trigger-update' && req.method === 'POST') {
-        const { exec } = require('child_process');
+        const { spawn } = require('child_process');
         console.log("Triggering update via API...");
-        exec('node index.js', (error, stdout, stderr) => {
-            if (error) {
-                console.error(`exec error: ${error}`);
+
+        const child = spawn('node', ['index.js']);
+
+        child.stdout.on('data', (data) => {
+            // Stream output directly to the server terminal
+            process.stdout.write(data);
+        });
+
+        child.stderr.on('data', (data) => {
+            // Stream errors directly to the server terminal
+            process.stderr.write(data);
+        });
+
+        child.on('error', (error) => {
+            console.error(`spawn error: ${error}`);
+            if (!res.headersSent) {
                 res.writeHead(500, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: false, error: error.message }));
-                return;
             }
-            console.log(`stdout: ${stdout}`);
-            if (stderr) console.error(`stderr: ${stderr}`);
+        });
 
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: true, log: stdout }));
+        child.on('close', (code) => {
+            console.log(`\nUpdate process exited with code ${code}`);
+            if (!res.headersSent) {
+                if (code === 0) {
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({
+                        success: true,
+                        log: "Update complete. Check server terminal for full details."
+                    }));
+                } else {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({
+                        success: false,
+                        error: `Process exited with code ${code}`
+                    }));
+                }
+            }
         });
         return;
     }

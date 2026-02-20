@@ -571,8 +571,10 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
         console.log(`  Fetching commits since ${prevState["Last Commit Date"]}`);
     }
 
-    const commitsRes = await fetchGitHub(`${API_BASE_URL}/repos/${repoName}/commits?per_page=100${sinceParam}`);
-    const commits = commitsRes ? (commitsRes.data || []) : [];
+    // Multiply the PR limit by 2 to give commits a healthier buffer (e.g., 600 commits instead of 300) without blowing out API
+    const maxCommitPages = Math.ceil(maxPrsLimit / 100) * 2;
+    const commitsRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/commits?per_page=100${sinceParam}`, maxCommitPages);
+    const commits = (commitsRes && Array.isArray(commitsRes)) ? commitsRes : [];
     const committers = new Set();
 
     if (Array.isArray(commits)) {
@@ -763,7 +765,19 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
                 const prDetail = prDetailRes ? prDetailRes.data : null;
                 if (!prDetail) return;
 
-                // --- 2a: Activity Log Extraction ---
+                // --- 2a: Deep Metrics Extraction (Required early for Commit timestamps) ---
+                let firstCommitTime = createdAt;
+                let prCommitsRes = null;
+                let reviewsRes = null;
+
+                if (isMerged) {
+                    prCommitsRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/pulls/${prNum}/commits?per_page=100`, 1);
+                    if (prCommitsRes && Array.isArray(prCommitsRes) && prCommitsRes.length > 0) {
+                        firstCommitTime = new Date(prCommitsRes[0].commit.committer.date);
+                    }
+                }
+
+                // --- 2b: Activity Log Extraction ---
                 let author = "Unknown";
                 if (prDetail.user) {
                     author = prDetail.user.email || prDetail.user.login;
@@ -772,15 +786,22 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
 
                 if (isMerged) stats["Total Merged PRs"]++;
 
-                const createdAt = new Date(prDetail.created_at);
-                const closedAt = new Date(prDetail.closed_at);
-
+                // Duration mathematically:
+                // Coding Time = First Commit -> PR Creation
+                // Review Time = PR Creation -> PR Merge
+                // Branch Duration = First Commit -> PR Merge
+                let codingHours = 0;
+                let reviewHours = 0;
                 let durationHours = 0;
-                if (closedAt > createdAt) {
-                    durationHours = (closedAt - createdAt) / (1000 * 3600);
-                }
 
-                let reviewHours = durationHours;
+                if (closedAt > createdAt) {
+                    reviewHours = (closedAt - createdAt) / (1000 * 3600);
+                }
+                if (createdAt > firstCommitTime) {
+                    codingHours = (createdAt - firstCommitTime) / (1000 * 3600);
+                }
+                durationHours = codingHours + reviewHours;
+
                 const loc = (prDetail.additions || 0) + (prDetail.deletions || 0);
 
                 if (isMerged) {
@@ -815,7 +836,7 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
                     "Target Branch": prDetail.base.ref
                 });
 
-                // --- 2b: Deep Metrics Extraction (Only for merged PRs) ---
+                // --- 2c: Deep Metrics Extraction Continued (Only for merged PRs) ---
                 if (!isMerged) return;
 
                 // AI Proxy 1: Test Code Ratio
@@ -834,14 +855,9 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
                 }
 
                 // Reviews
-                const reviewsRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/pulls/${prNum}/reviews?per_page=100`, 2);
-
-                // Commits for True Lead Time and Code Churn
-                const prCommitsRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/pulls/${prNum}/commits?per_page=100`, 1);
+                reviewsRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/pulls/${prNum}/reviews?per_page=100`, 2);
 
                 if (prCommitsRes && Array.isArray(prCommitsRes) && prCommitsRes.length > 0) {
-                    const firstCommitTime = new Date(prCommitsRes[0].commit.committer.date);
-
                     if (closedAt > firstCommitTime) {
                         totalTrueLeadTime += (closedAt - firstCommitTime) / (1000 * 3600);
                         prsWithTrueLeadTime++;

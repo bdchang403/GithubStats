@@ -356,9 +356,8 @@ async function fetchSonarQubeMetrics(repoName, explicitProjectKeysStr) {
         const url = `${sqConfig.baseUrl.replace(/\/$/, '')}/api/measures/component?component=${projectKey}&metricKeys=${metrics}`;
 
         try {
-            const auth = Buffer.from(`${sqConfig.auth.token}:`).toString('base64');
             const response = await fetch(url, {
-                headers: { 'Authorization': `Basic ${auth}`, 'Accept': 'application/json' }
+                headers: { 'Authorization': `Bearer ${sqConfig.auth.token}`, 'Accept': 'application/json' }
             });
 
             if (response.ok) {

@@ -631,21 +631,31 @@
           row['SQ Vulnerabilities'] = parseInt(row['SQ Vulnerabilities'] || 0, 10);
 
           // Date parsing for filter (handle missing timestamp with fallback)
-          if (row['Timestamp'] && row['Timestamp'].trim()) {
+          let tsStr = row['Timestamp'] || row['Date'];
+          if (tsStr && tsStr.trim()) {
+            tsStr = tsStr.trim();
             // Force UTC parsing for "YYYY-MM-DD HH:mm:ss" format
-            let tsStr = row['Timestamp'].trim();
             if (tsStr.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
               tsStr = tsStr.replace(' ', 'T') + 'Z';
             }
             row._date = new Date(tsStr);
-            if (isNaN(row._date)) row._date = new Date(); // Fallback invalid date
+            if (isNaN(row._date)) row._date = new Date(0); // Epoch fallback
           } else {
-            row._date = new Date(); // Fallback missing date
+            row._date = new Date(0); // Epoch fallback
           }
         });
 
-        // Parse Activity Data (Events)
+        // Build map of Repository -> AppCode from history to join against activity logs
+        const repoToApp = {};
+        historyData.forEach(row => {
+          if (row.Repository && row.AppCode) {
+            repoToApp[row.Repository] = row.AppCode;
+          }
+        });
+
+        // Parse Dates for Activity log and Inject AppCode
         activityData.forEach(row => {
+          row.AppCode = repoToApp[row.Repository] || row.AppCode || 'Unknown';
           // "Date" column is the event time (Commit/PR/Run)
           if (row['Date'] && row['Date'].trim()) {
             row._eventDate = new Date(row['Date']);
@@ -784,7 +794,7 @@
       // Filter Raw Data
       filteredData = historyData.filter(d => {
         const capMatch = selCaps.length === 0 || selCaps.includes(d.Capability || 'Unknown');
-        const repoMatch = selRepos.length === 0 || selRepos.includes(d.Repository);
+        const repoMatch = selRepos.length === 0 || selRepos.includes(d.AppCode || d.Repository);
 
         let dateMatch = true;
         if (!isNaN(d._date)) {
@@ -796,7 +806,7 @@
       // Filter Activity Data (Events)
       filteredActivityData = activityData.filter(d => {
         const capMatch = selCaps.length === 0 || selCaps.includes(d.Capability || 'Unknown');
-        const repoMatch = selRepos.length === 0 || selRepos.includes(d.Repository);
+        const repoMatch = selRepos.length === 0 || selRepos.includes(d.AppCode || d.Repository);
 
         let dateMatch = true;
         if (!isNaN(d._eventDate)) {
@@ -1273,6 +1283,8 @@
         const avgChurn = repos.reduce((acc, d) => acc + parseFloat(d['Avg Code Churn (Commits)'] || 0), 0) / count;
         const avgTechDebt = repos.reduce((acc, d) => acc + parseFloat(d['SQ Technical Debt (Days)'] || 0), 0) / count;
         const totalUnitTests = repos.reduce((acc, d) => acc + parseFloat(d['SQ Unit Tests'] || 0), 0);
+        const avgTrueLead = repos.reduce((acc, d) => acc + parseFloat(d['True Lead Time for Changes (Hours)'] || 0), 0) / count;
+        const avgCICD = repos.reduce((acc, d) => acc + parseFloat(d['CI/CD Failure Rate (%)'] || 0), 0) / count;
 
         // Logic Aggregations
         const hasCT = repos.some(d => d['CT.yml Exists'] === 'Yes') ? 'Yes' : 'No';

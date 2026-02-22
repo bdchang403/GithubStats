@@ -296,6 +296,25 @@ async function fetchGitHubPaginated(url, maxPages = 10) {
     return results;
 }
 
+// --- User Email Extraction ---
+const userEmailCache = {};
+
+async function fetchUserEmail(login) {
+    if (!login || login.includes('[bot]') || login === 'dependabot') return null;
+    if (userEmailCache[login] !== undefined) return userEmailCache[login];
+
+    try {
+        const userRes = await fetchGitHub(`${API_BASE_URL}/users/${login}`);
+        if (userRes && userRes.data && userRes.data.email) {
+            userEmailCache[login] = userRes.data.email;
+            return userRes.data.email;
+        }
+    } catch (e) { }
+
+    userEmailCache[login] = null;
+    return null;
+}
+
 // --- External API Cross-Referencing ---
 const defectCache = {};
 
@@ -551,7 +570,7 @@ async function fetchCICDConfig(repoName, sha = null) {
     return null;
 }
 
-async function processRepo(repoName, capability, sonarQubeKey, prevState, appCode) {
+async function processRepo(repoName, capability, sonarQubeKey, prevState, appCode, cdRepo) {
     console.log(`Processing ${repoName}...`);
     const stats = {
         Repository: repoName,
@@ -603,6 +622,23 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState, appCod
     }
 
     const logs = [];
+
+    // --- Cross-Repo DORA Tracking (Fetch CD logs if CD Repository provided) ---
+    let cdCommits = [];
+    let cdRunsRaw = [];
+
+    if (cdRepo && cdRepo !== "Unknown") {
+        console.log(`  Fetching CD Infrastructure from ${cdRepo}`);
+        // Fetch recent CD commits
+        const cdCommitsRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${cdRepo}/commits?per_page=100`, 3);
+        if (cdCommitsRes && Array.isArray(cdCommitsRes)) cdCommits = cdCommitsRes;
+
+        // Fetch recent CD workflow runs
+        const cdRunsRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${cdRepo}/actions/runs?per_page=100&sort=created_at&direction=desc`, 3);
+        if (cdRunsRes && cdRunsRes.workflow_runs && Array.isArray(cdRunsRes.workflow_runs)) {
+            cdRunsRaw = cdRunsRes.workflow_runs.filter(r => r.conclusion === "success" && ["main", "master", "prod"].some(b => (r.head_branch || "").toLowerCase().includes(b)));
+        }
+    }
 
     // 1. Commits
     let sinceParam = "";
@@ -718,12 +754,13 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState, appCod
                 runEnv = stats["Environment"] !== "Unknown" ? stats["Environment"] : getEnvironment(run.head_branch);
             }
 
-            // User: Try Head Commit Email, else Triggering Actor Login
+            // User: Try Head Commit Email, else Profile API Email (skip `.login` fallback)
             let runUser = "Unknown";
             if (run.head_commit && run.head_commit.author && run.head_commit.author.email) {
                 runUser = run.head_commit.author.email;
             } else if (run.triggering_actor) {
-                runUser = run.triggering_actor.login;
+                const fetchedEmail = await fetchUserEmail(run.triggering_actor.login);
+                if (fetchedEmail) runUser = fetchedEmail;
             }
 
             logs.push({
@@ -823,7 +860,16 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState, appCod
                 // --- 2b: Activity Log Extraction ---
                 let author = "Unknown";
                 if (prDetail.user) {
-                    author = prDetail.user.email || prDetail.user.login;
+                    let prEmail = prDetail.user.email;
+                    if (!prEmail) prEmail = await fetchUserEmail(prDetail.user.login);
+
+                    // Fallback to extraction from PR Commits using the first commit's git-author string
+                    if (!prEmail && prCommitsRes && prCommitsRes.length > 0) {
+                        prEmail = prCommitsRes[0].commit.author.email;
+                    }
+
+                    // Strict user preference: Only emit explicit Email strings instead of `.login` fallback
+                    author = prEmail || "Unknown";
                 }
                 prAuthors.add(author);
 
@@ -906,7 +952,30 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState, appCod
                         prsWithTrueLeadTime++;
 
                         // DORA: Lead Time to Production (Days)
-                        const firstDeploy = recentDeploys.find(d => d >= closedAt);
+                        // Cross-Repo Tracking: If cdRepo is provided, search the CD commit history for the PR's merge_commit_sha
+                        let firstDeploy = null;
+                        if (cdRepo && cdRepo !== "Unknown" && prDetail.merge_commit_sha) {
+                            const sha = prDetail.merge_commit_sha;
+                            // Does the CD repo contain a commit that explicitly references this App's PR merge SHA?
+                            const correlatedCdCommit = cdCommits.find(cdc => cdc.commit.message.includes(sha));
+
+                            if (correlatedCdCommit) {
+                                const cdCommitDate = new Date(correlatedCdCommit.commit.committer.date);
+                                // Find the first successful CD deploy that occurred AFTER this CD commit was pushed
+                                const subsequentCdDeploy = cdRunsRaw.find(cdr => new Date(cdr.created_at) >= cdCommitDate);
+
+                                if (subsequentCdDeploy) {
+                                    firstDeploy = new Date(subsequentCdDeploy.created_at);
+                                } else {
+                                    // Fallback: If no workflow exists, just use the CD commit timestamp itself
+                                    firstDeploy = cdCommitDate;
+                                }
+                            }
+                        } else {
+                            // Standard Monorepo tracking
+                            firstDeploy = recentDeploys.find(d => d >= closedAt);
+                        }
+
                         if (firstDeploy) {
                             totalLeadTimeToProd += (firstDeploy - firstCommitTime) / (1000 * 3600 * 24);
                             prsWithLeadTimeToProd++;
@@ -1271,11 +1340,12 @@ async function main() {
         const capability = row.Capability || "Unknown";
         const sonarQubeKey = row.SonarQubeProjectKey || null;
         const appCode = row.AppCode || "Unknown";
+        const cdRepo = row.CDRepository || row.CDRepo || null;
 
         writeStatus(processed, totalRepos, repo, startTime);
 
         try {
-            const output = await processRepo(repo, capability, sonarQubeKey, history[repo], appCode);
+            const output = await processRepo(repo, capability, sonarQubeKey, history[repo], appCode, cdRepo);
             results.push(output.stats);
             allLogs = allLogs.concat(output.logs);
         } catch (e) {

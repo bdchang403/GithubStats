@@ -344,9 +344,12 @@ async function fetchSonarQubeMetrics(repoName, explicitProjectKeysStr) {
         return null;
     }
 
+    if (!explicitProjectKeysStr) {
+        return null;
+    }
+
     const sqConfig = integrationConfig.sonarQube;
-    const baseKey = explicitProjectKeysStr || `${sqConfig.projectKeyPrefix || ''}${repoName}`;
-    const projectKeys = baseKey.split(/[|,;]+/).map(k => k.trim()).filter(k => k);
+    const projectKeys = explicitProjectKeysStr.split(/[|,;]+/).map(k => k.trim()).filter(k => k);
     const metrics = sqConfig.metrics.join(',');
 
     const aggregatedResult = {};

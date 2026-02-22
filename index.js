@@ -551,10 +551,11 @@ async function fetchCICDConfig(repoName, sha = null) {
     return null;
 }
 
-async function processRepo(repoName, capability, sonarQubeKey, prevState) {
+async function processRepo(repoName, capability, sonarQubeKey, prevState, appCode) {
     console.log(`Processing ${repoName}...`);
     const stats = {
         Repository: repoName,
+        AppCode: appCode,
         Capability: capability,
         "Total Commits": 0,
         "Total Merged PRs": 0,
@@ -1229,6 +1230,7 @@ async function main() {
         if (histData.length > 0 && (!Object.keys(histData[0]).includes('Environment') || !Object.keys(histData[0]).includes('Change Failure Rate (%)'))) {
             console.log("Migrating schema: Adding Environment and DORA/SPACE columns...");
             histData = histData.map(row => {
+                row.AppCode = row.AppCode || 'Unknown';
                 row.Environment = row.Environment || 'Unknown';
                 row['MTTR-Sec (Hours)'] = row['MTTR-Sec (Hours)'] || 0;
                 row['Successful Deployments'] = row['Successful Deployments'] || 0;
@@ -1268,11 +1270,12 @@ async function main() {
         if (!repo) continue;
         const capability = row.Capability || "Unknown";
         const sonarQubeKey = row.SonarQubeProjectKey || null;
+        const appCode = row.AppCode || "Unknown";
 
         writeStatus(processed, totalRepos, repo, startTime);
 
         try {
-            const output = await processRepo(repo, capability, sonarQubeKey, history[repo]);
+            const output = await processRepo(repo, capability, sonarQubeKey, history[repo], appCode);
             results.push(output.stats);
             allLogs = allLogs.concat(output.logs);
         } catch (e) {
@@ -1289,7 +1292,7 @@ async function main() {
     results.forEach(r => r.Timestamp = timestamp);
 
     // Save Output
-    const cols = ['Repository', 'Capability', 'Repo Type', 'Verification Status', 'Timestamp Verification',
+    const cols = ['Repository', 'AppCode', 'Capability', 'Repo Type', 'Verification Status', 'Timestamp Verification',
         'Total Commits', 'Total Merged PRs',
         'Distinct Committers Count', 'Distinct PR Authors Count',
         'Last Commit Date', 'Last PR Date', 'Last Workflow Date',

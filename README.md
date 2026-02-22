@@ -22,6 +22,8 @@ Unlike traditional apps requiring a backend server, this project uses a **Self-U
 *   **AI Proxies**: Test Scaffold Quality vs Change Failure Rate bubble charts correlating AI adoption with boilerplate velocity.
 *   **Third-Party Integrations**: Cross-reference pull requests against Jira / ServiceNow IDs, and extract SonarQube unit tests, security ratings, and tech debt.
 *   **UI Data Trigger**: Trigger a fresh data update directly from the dashboard.
+*   **Live ETA Tracking**: Asynchronous `/api/status` endpoint computes historical average processing times to display a live countdown timer during extraction.
+*   **Infrastructure Lead Time Tracking**: Correlates native pull requests against `CT.yml` workflow run definitions to surface historical CI deployment logs.
 *   **ETag API Caching**: Local `.api_cache` minimizes GitHub rate limit consumption by leveraging 304 Not Modified interceptions for historical metadata.
 
 ## 🚀 Installation & Setup
@@ -66,6 +68,9 @@ For security, repository tracking databases and API configurations have been mov
    # NOTE: For GitHub Enterprise Cloud, defaults to api.github.com.
    # For Enterprise Server (Self-Hosted):
    # GITHUB_API_BASE_URL=https://github.company.com/api/v3
+   
+   # Trace Debugging: Exposes precise HTTP API URL requests tracking data loss in run_errors.log
+   # ENABLE_DEBUG_LOGGING=true
    ```
 
 ### 5. Start the Dashbord
@@ -74,10 +79,14 @@ For security, repository tracking databases and API configurations have been mov
 ```
 - Opens dashboard at `http://localhost:8080`.
 - Local "Update Data" button runs `node index.js` immediately.
-
+- The UI will actively poll the backend `/api/status` endpoint to display a live dynamic ETA and repository processing string below the trigger button.
 ## 🐛 Troubleshooting & Logs
-If your dashboard metrics say `Unknown`, `N/A`, or data fails to populate during an update cycle:
-- Check `run_errors.log` in the root directory. API connection failures (401 Unauthorized, 404 Not Found, 429 Rate Limits) across GitHub, SonarQube, Jira, and ServiceNow are intercepted and appended here with precise ISO timestamps.
+If your dashboard metrics say `Unknown`, `N/A`, or data fails to populate during an update cycle (Silent Data Drops):
+- Check `run_errors.log` in the root directory. This explicitly traces Javascript `e.stack` execution faults to isolate missing JSON payload arrays crossing the `Promise.all` bridge.
+- **Forcing Fresh Data (Cache Purge):** `index.js` leverages HTTP 304 caching. Deleting your `github_stats_output.csv` will **NOT** trigger fresh API calls; the script will rebuild the CSV using your local invisible cache. To definitively execute a fresh extraction, delete the cache folder:
+   ```bash
+   rm -rf .api_cache/ && node index.js
+   ```
 
 ## 📦 Deployment (GitHub Pages)
 
@@ -99,6 +108,7 @@ This app is designed to run on GitHub Pages.
 For environments with restricted internet access:
 *   **Frontend**: `Chart.js` and `PapaParse` are vendored in `vendor/`. `index.html` uses these local files instead of CDNs.
 *   **Backend**: `node_modules/` is committed to the repo. `npm install` is NOT required during deployment.
+*   **Air-Gapped Actions CI**: The `.github/workflows/update_stats.yml` explicitly bypasses `actions/setup-node`. It expects the Enterprise Ubuntu runner to provide its own native Node ecosystem, circumventing blocked external registry requests.
 *   **Updates**: When adding new dependencies, you must commit them to `node_modules/` or `vendor/`.
 
 ## 📂 Project Structure

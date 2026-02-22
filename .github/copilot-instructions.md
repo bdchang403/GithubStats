@@ -98,6 +98,21 @@ When troubleshooting frontend issues (e.g., Chart.js rendering bugs or DOM layou
 2. **Browser Invocation**: Launch your headless browser or web testing tool to navigate to `http://localhost:8080`.
 3. **DOM Inspection**: Inspect the DOM programmatically. Check if canvas elements exist (`document.getElementById('chart-mttr')`), or read the console logs directly from the browser instance to catch frontend JavaScript exceptions.
 4. **Visual Verification**: If your tools support screenshot or layout tree dumping, use them to verify that the charts are drawn and the CSS grid has not overflowed.
+
+### Cross-Repo DORA Metrics Architecture (App CI -> Infra CD)
+When prompted to build "Cross-Repo DORA Tracking" or fix "Lead Time to Production" evaluating to 0, you must implement the following structural bridge in `index.js`, as the enterprise environment separates Continuous Integration (Application Repositories) from Continuous Deployment (Infrastructure Repositories).
+
+1. **Input Schema Extension:**
+   - Modify the `github_input.csv` reading logic in `index.js` `main()` to expect a 5th column: `CD_Repository`. Example: `appName/app-repo,Capability,,AppCode,infraName/infra-repo`.
+   - Pass `cdRepo` down into `processRepo()`.
+
+2. **Cross-Repo API Extraction:**
+   - Inside `processRepo()`, if `cdRepo` exists and is distinct from `repoName`, execute a separate `fetchGitHubPaginated` call targeting `${API_BASE_URL}/repos/${cdRepo}/actions/runs`.
+   - **Crucial:** The `GITHUB_TOKEN` must possess `repo` scope for *both* the App and Infra repositories. Wrap this fetch in a `try/catch` block that explicitly gracefully degrades to Lead Time `0` if a 404/403 is returned due to asymmetric token permissions.
+
+3. **Version Correlation (The Bridge):**
+   - You must correlate the exact CI artifact to the CD deployment. Because the exact correlation mechanism (e.g., Commit SHA in a Helm chart, Tag referenced in a `deployment.yml`, or a `repository_dispatch` JSON payload) is highly specific to the enterprise's pipeline, **you must explicitly ask the user exactly how the Infra Repo's workflow references the Application Repo's version**.
+   - Do NOT guess this linkage. Once the user provides the linkage format (e.g., "The Infra repo's commit message contains the App's SHA"), build the deterministic regex parser to map the App Repo's PR `merge_timestamp` to the corresponding Infra Repo's GitHub Action `created_at` timestamp to calculate actual Lead Time (Days).
 </troubleshooting_guidelines>
 
 <response_format>

@@ -1092,14 +1092,30 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
     let ctHasRuns = "No";
     let ctLastRun = "N/A";
 
-    const ctFileRes = await fetchGitHub(`${API_BASE_URL}/repos/${repoName}/actions/workflows/CT.yml`);
-    if (ctFileRes && ctFileRes._status !== 404 && ctFileRes._status !== 403) {
-        ctExists = "Yes";
-        // Fetch runs specifically for CT.yml
-        const ctRunsRes = await fetchGitHub(`${API_BASE_URL}/repos/${repoName}/actions/workflows/CT.yml/runs?per_page=1`);
-        if (ctRunsRes && ctRunsRes.data && ctRunsRes.data.workflow_runs && ctRunsRes.data.workflow_runs.length > 0) {
-            ctHasRuns = "Yes";
-            ctLastRun = ctRunsRes.data.workflow_runs[0].created_at;
+    const workflowsRes = await fetchGitHub(`${API_BASE_URL}/repos/${repoName}/actions/workflows`);
+    if (workflowsRes && workflowsRes.data && workflowsRes.data.workflows) {
+        // Find any workflow file that contains 'ct' in the name and ends with .yml or .yaml (case-insensitive)
+        const ctWorkflows = workflowsRes.data.workflows.filter(wf => {
+            if (!wf.path) return false;
+            const filename = wf.path.split('/').pop().toLowerCase();
+            return filename.includes('ct') && (filename.endsWith('.yml') || filename.endsWith('.yaml'));
+        });
+
+        if (ctWorkflows.length > 0) {
+            ctExists = "Yes";
+            let latestRunDate = null;
+
+            for (const wf of ctWorkflows) {
+                const ctRunsRes = await fetchGitHub(`${API_BASE_URL}/repos/${repoName}/actions/workflows/${wf.id}/runs?per_page=1`);
+                if (ctRunsRes && ctRunsRes.data && ctRunsRes.data.workflow_runs && ctRunsRes.data.workflow_runs.length > 0) {
+                    ctHasRuns = "Yes";
+                    const runDate = new Date(ctRunsRes.data.workflow_runs[0].created_at);
+                    if (!latestRunDate || runDate > latestRunDate) {
+                        latestRunDate = runDate;
+                        ctLastRun = ctRunsRes.data.workflow_runs[0].created_at;
+                    }
+                }
+            }
         }
     }
     stats["CT.yml Exists"] = ctExists;

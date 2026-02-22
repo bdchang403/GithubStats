@@ -215,8 +215,8 @@ async function fetchGitHub(url) {
             }
 
             if (!response.ok) {
-                // Suppress 404 console noise ONLY for optional config files (CICD.yml, CT.yml)
-                const isOptionalFile = url.endsWith('CICD.yml') || url.endsWith('CT.yml');
+                // Suppress 404 console noise ONLY for optional config files or dynamic workflow discovery
+                const isOptionalFile = url.includes('.yml') || url.includes('.yaml') || url.includes('/actions/workflows');
                 if (!(response.status === 404 && isOptionalFile)) {
                     logError(`Error ${response.status} fetch ${url}`);
                 }

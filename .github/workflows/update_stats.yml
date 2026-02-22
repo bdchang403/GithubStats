@@ -27,10 +27,10 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
           # Check if there are changes to commit
-          if git diff --quiet github_stats_output.csv github_stats_history.csv; then
+          if git diff --quiet .; then
             echo "No changes to commit."
           else
-            git add github_stats_output.csv github_stats_history.csv github_activity_log.csv || true
+            git add .
             git commit -m "Update GitHub Stats data [skip ci]"
             git push
           fi

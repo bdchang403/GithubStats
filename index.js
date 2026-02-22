@@ -138,12 +138,28 @@ function parseCSVLine(line) {
 }
 
 async function fetchGitHub(url) {
+    const cacheKey = crypto.createHash('md5').update(url).digest('hex');
+    const cacheFile = path.join(API_CACHE_DIR, `${cacheKey}.json`);
+    let cachedData = null;
+
+    if (fs.existsSync(cacheFile)) {
+        try {
+            cachedData = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
+        } catch (e) {
+            // Corrupt cache file, ignore
+        }
+    }
+
     const headers = {
         'User-Agent': 'NodeJS-Collector',
         'Accept': 'application/vnd.github.v3+json'
     };
     if (GITHUB_TOKEN) headers['Authorization'] = `token ${GITHUB_TOKEN}`;
     else console.warn("Warning: GITHUB_TOKEN not set. Rate limits apply.");
+
+    if (cachedData && cachedData.etag) {
+        headers['If-None-Match'] = cachedData.etag;
+    }
 
     let retries = 3;
     while (retries > 0) {
@@ -190,6 +206,14 @@ async function fetchGitHub(url) {
                 }
             }
 
+            if (response.status === 304 && cachedData) {
+                return {
+                    data: cachedData.data,
+                    headers: new Headers(cachedData.headers),
+                    _status: 304
+                };
+            }
+
             if (!response.ok) {
                 // Suppress 404 console noise ONLY for optional config files (CICD.yml, CT.yml)
                 const isOptionalFile = url.endsWith('CICD.yml') || url.endsWith('CT.yml');
@@ -201,9 +225,24 @@ async function fetchGitHub(url) {
 
             const data = await response.json();
 
+            const etag = response.headers.get('etag');
+            if (etag) {
+                const cacheToSave = {
+                    etag: etag,
+                    headers: Array.from(response.headers.entries()),
+                    data: data
+                };
+                try {
+                    fs.writeFileSync(cacheFile, JSON.stringify(cacheToSave));
+                } catch (e) {
+                    // Ignore write fails
+                }
+            }
+
             return {
                 data,
-                headers: response.headers
+                headers: response.headers,
+                _status: response.status
             };
         } catch (e) {
             logError(`Fetch error for ${url}: ${e.message}`);

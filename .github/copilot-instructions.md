@@ -61,6 +61,20 @@ In the context of this repository's interactions with the GitHub REST API (speci
 - Always log the exact URL and query parameters being sent.
 - Intercept the `response.json()` body on a 422 error. GitHub often provides a detailed `message` and an `errors` array explaining exactly which field failed validation. Log this payload before throwing or continuing.
 
+### Triaging Data Loss and Silent Execution Failures
+When debugging scenarios where API data is successfully fetched but fails to appear in the final CSV outputs (e.g., missing PRs, dropped Commits, or empty Repositories), assume a silent exception is crashing the extraction loop before the payload pushes to `allLogs`.
+
+**1. Isolate the Stack Trace via run_errors.log**
+- Do *not* rely solely on the terminal output (`output.log` or console). If a repository's extraction loop crashes mid-flight (such as a `ReferenceError` mapping variable assignment like `createdAt`), the global `catch (e)` block will swallow the error to save the rest of the execution run.
+- You **must** open `run_errors.log` to view the raw `e.stack` output. This file preserves the exact file name, line number, and character position of the exception.
+
+**2. Enable Debug Logging**
+- If the stack trace points to an API payload structurally changing or returning `undefined` unexpectedly, you must enable explicit trace logging.
+- Set `ENABLE_DEBUG_LOGGING=true` in the `.env` file. This restores the hundreds of `console.log` statements inside `index.js` that track exactly which API URL was hit, the HTTP status code, and the specific repository progress. Trace the console lines strictly leading up to the `run_errors.log` exception line to find the malformed payload.
+
+**3. Test the Loop Iteration**
+- When isolating missing data parameters within a `Promise.all(batch.map())` logic block, check for variable scoping issues (variables declared outside the map, or referenced before instantiation). Standard `try/catch` wrappers outside the loop will instantly abort the entire array processing if a single item causes a syntactical JavaScript error. 
+
 ### Autonomous Environment & Browser Troubleshooting
 As an Expert AI Engineer, you must act with autonomy to verify your solutions. Do not default to asking the user to manually run commands or test UI components if you possess the capability to do so yourself within your toolset. 
 

@@ -922,7 +922,7 @@
       // 2. Type (Pie)
       const typeCount = {};
       latestData.forEach(d => { typeCount[d['Repo Type']] = (typeCount[d['Repo Type']] || 0) + 1; });
-      renderChart('chart-type', 'pie', Object.keys(typeCount), [{ data: Object.values(typeCount), backgroundColor: ['#f8c555', '#0969da'] }]);
+      renderChart('chart-type', 'pie', Object.keys(typeCount), [{ data: Object.values(typeCount), backgroundColor: ['#f8c555', '#0969da', '#8b949e'] }]);
 
       // 5. Devs vs Authors (Grouped Bar)
       renderChart('chart-devs', 'bar', latestData.map(d => d.Repository), [
@@ -1183,8 +1183,12 @@
       // Use dateLabels for X-axis
       renderChart('chart-trend-commits', 'line', dateLabels, createTrendDatasets('Commits'), {}, 'Date', 'Number of Commits');
       renderChart('chart-trend-prs', 'line', dateLabels, createTrendDatasets('PRs'), {}, 'Date', 'Number of PRs');
-      renderChart('chart-trend-leadtime', 'line', dateLabels, createMetricTrendDatasets('Lead Time to Production (Days)'), leadTimePlugins, 'Date', 'Days');
-      renderChart('chart-trend-mttr', 'line', dateLabels, createMetricTrendDatasets('MTTR-Sec (Hours)'), mttrPlugins, 'Date', 'Hours');
+
+      const leadTimeDatasets = createMetricTrendDatasets('Lead Time to Production (Days)');
+      renderChart('chart-trend-leadtime', 'line', dateLabels, leadTimeDatasets, leadTimePlugins, 'Date', 'Days (<14 is Elite)');
+
+      const mttrDatasets = createMetricTrendDatasets('MTTR-Sec (Hours)');
+      renderChart('chart-trend-mttr', 'line', dateLabels, mttrDatasets, mttrPlugins, 'Date', 'Hours (<96 is Target)');
     }
 
     function renderChart(id, type, labels, datasets, customPlugins = {}, xAxisTitle = '', yAxisTitle = '') {
@@ -1203,6 +1207,13 @@
           title: { display: !!xAxisTitle, text: xAxisTitle }
         }
       };
+
+      // Force static scales on specific threshold graphs to prevent blank rendering on sparse data
+      if (id === 'chart-trend-leadtime') {
+        scalesConfig.y.max = 45;
+      } else if (id === 'chart-trend-mttr') {
+        scalesConfig.y.max = 120;
+      }
 
       // Pie and Doughnut charts don't use X/Y axes
       const useScales = type !== 'pie' && type !== 'doughnut';

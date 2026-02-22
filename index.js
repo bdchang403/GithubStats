@@ -729,6 +729,9 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
                 const isMerged = item.merged_at != null;
                 const action = isMerged ? "Merge (PR)" : "Close (PR - Unmerged)";
 
+                const createdAt = new Date(item.created_at);
+                const closedAt = item.closed_at ? new Date(item.closed_at) : new Date();
+
                 // We still need PR Detail for Additions/Deletions, but now we're bounded by maxPrsLimit!
                 const prDetailRes = await fetchGitHub(`${API_BASE_URL}/repos/${repoName}/pulls/${prNum}`);
                 const prDetail = prDetailRes ? prDetailRes.data : null;
@@ -1168,7 +1171,7 @@ async function main() {
             results.push(output.stats);
             allLogs = allLogs.concat(output.logs);
         } catch (e) {
-            logError(`Error processing ${repo}: ${e.message}`);
+            logError(`Error processing ${repo} (Data dropped): \n${e.stack}`);
         }
     }
 

@@ -924,17 +924,34 @@
       latestData.forEach(d => { typeCount[d['Repo Type']] = (typeCount[d['Repo Type']] || 0) + 1; });
       renderChart('chart-type', 'pie', Object.keys(typeCount), [{ data: Object.values(typeCount), backgroundColor: ['#f8c555', '#0969da', '#8b949e'] }]);
 
-      // 5. Devs vs Authors (Grouped Bar)
-      renderChart('chart-devs', 'bar', latestData.map(d => d.Repository), [
-        { label: 'Committers', data: latestData.map(d => d['Distinct Committers Count']), backgroundColor: '#2da44e' },
-        { label: 'PR Authors', data: latestData.map(d => d['Distinct PR Authors Count']), backgroundColor: '#cf222e' }
-      ], {}, 'Repository', 'Developer Count');
+      // Pre-calculate Capability aggregations for Bar Charts
+      const capabilities = [...new Set(latestData.map(d => d.Capability || 'Unknown'))];
+      const capDevs = { committers: [], authors: [] };
+      const capTime = { coding: [], review: [] };
 
-      // 6. Time Analysis (Stacked)
-      renderChart('chart-time', 'bar', latestData.map(d => d.Repository), [
-        { label: 'Coding Time (Hr)', data: latestData.map(d => d['Avg Coding Time (Hours)']), backgroundColor: '#0969da', stack: 'Stack 0' },
-        { label: 'Review Time (Hr)', data: latestData.map(d => d['Avg Review Time (Hours)']), backgroundColor: '#f8c555', stack: 'Stack 0' }
-      ], {}, 'Repository', 'Time (Hours)');
+      capabilities.forEach(cap => {
+        const reposInCap = latestData.filter(d => (d.Capability || 'Unknown') === cap);
+
+        // Sum developers working across the capability
+        capDevs.committers.push(reposInCap.reduce((acc, d) => acc + (d['Distinct Committers Count'] || 0), 0));
+        capDevs.authors.push(reposInCap.reduce((acc, d) => acc + (d['Distinct PR Authors Count'] || 0), 0));
+
+        // Average time metrics across repos in the capability
+        capTime.coding.push(reposInCap.reduce((acc, d) => acc + (d['Avg Coding Time (Hours)'] || 0), 0) / (reposInCap.length || 1));
+        capTime.review.push(reposInCap.reduce((acc, d) => acc + (d['Avg Review Time (Hours)'] || 0), 0) / (reposInCap.length || 1));
+      });
+
+      // 5. Devs vs Authors (Grouped Bar - Aggregated by Capability)
+      renderChart('chart-devs', 'bar', capabilities, [
+        { label: 'Committers', data: capDevs.committers, backgroundColor: '#2da44e' },
+        { label: 'PR Authors', data: capDevs.authors, backgroundColor: '#cf222e' }
+      ], {}, 'Capability', 'Total Developers');
+
+      // 6. Time Analysis (Stacked - Aggregated by Capability)
+      renderChart('chart-time', 'bar', capabilities, [
+        { label: 'Avg Coding Time (Hr)', data: capTime.coding, backgroundColor: '#0969da', stack: 'Stack 0' },
+        { label: 'Avg Review Time (Hr)', data: capTime.review, backgroundColor: '#f8c555', stack: 'Stack 0' }
+      ], {}, 'Capability', 'Average Time (Hours)');
 
       // 7. Scatter (Review vs LOC)
       const scatterData = latestData.map(d => ({

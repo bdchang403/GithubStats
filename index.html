@@ -1263,9 +1263,26 @@
         if (isLocal) {
           // Local Mode: Call Internal API
           if (statusDiv) statusDiv.innerText = "Running 'node index.js'...";
+
+          const statusInterval = setInterval(async () => {
+            try {
+              const sRes = await fetch('/api/status');
+              const sData = await sRes.json();
+              if (sData.status !== "Idle" && statusDiv) {
+                const mins = Math.floor(sData.etaSeconds / 60);
+                const secs = Math.floor(sData.etaSeconds % 60);
+                const etaStr = sData.etaSeconds > 0 ? `[ETA: ~${mins}m ${secs}s]` : '';
+                statusDiv.innerText = `${sData.status} (${sData.processed}/${sData.total}) ${etaStr}`;
+              }
+            } catch (e) { }
+          }, 1500);
+
           const res = await fetch('/api/trigger-update', {
             method: 'POST'
           });
+
+          clearInterval(statusInterval);
+
           const data = await res.json();
           if (data.success) {
             if (statusDiv) {

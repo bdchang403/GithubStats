@@ -36,6 +36,37 @@ loadEnv();
 const GITHUB_TOKEN = ENV.GITHUB_TOKEN;
 const API_BASE_URL = (ENV.GITHUB_API_BASE_URL || 'https://api.github.com').replace(/\/$/, '');
 
+const ENABLE_DEBUG_LOGGING = ENV.ENABLE_DEBUG_LOGGING === 'true';
+
+// Optionally hijack console.log and console.warn to suppress noise unless debugging
+const originalLog = console.log;
+const originalWarn = console.warn;
+console.log = function (...args) {
+    if (ENABLE_DEBUG_LOGGING) originalLog.apply(console, args);
+};
+console.warn = function (...args) {
+    if (ENABLE_DEBUG_LOGGING) originalWarn.apply(console, args);
+};
+
+// Function for dashboard ETA reporting
+function writeStatus(processed, total, currentRepo, startTime) {
+    const elapsedSec = (Date.now() - startTime) / 1000;
+    const avgSecPerRepo = processed > 0 ? elapsedSec / processed : 0;
+    const remainingSec = avgSecPerRepo * (total - processed);
+    const statusData = {
+        status: currentRepo ? `Processing ${currentRepo}...` : "Idle",
+        processed,
+        total,
+        etaSeconds: Math.round(remainingSec)
+    };
+    try {
+        fs.writeFileSync(path.join(__dirname, 'status.json'), JSON.stringify(statusData));
+    } catch (e) { }
+}
+
+// Reset status immediately on startup
+writeStatus(0, 0, "Initializing Extractor...", Date.now());
+
 // The maximum number of recent PRs to query per repository.
 // High values exponentially increase API load due to downstream files/commits/reviews queries per PR.
 const maxPrsLimit = parseInt(ENV.MAX_PRS_TO_ANALYZE || "30", 10);
@@ -1159,12 +1190,17 @@ async function main() {
 
     const results = [];
     let allLogs = [];
+    let processed = 0;
+    const totalRepos = inputData.filter(r => r.Repository).length;
+    const startTime = Date.now();
 
     for (const row of inputData) {
         const repo = row.Repository;
         if (!repo) continue;
         const capability = row.Capability || "Unknown";
         const sonarQubeKey = row.SonarQubeProjectKey || null;
+
+        writeStatus(processed, totalRepos, repo, startTime);
 
         try {
             const output = await processRepo(repo, capability, sonarQubeKey, history[repo]);
@@ -1173,7 +1209,12 @@ async function main() {
         } catch (e) {
             logError(`Error processing ${repo} (Data dropped): \n${e.stack}`);
         }
+        processed++;
+        writeStatus(processed, totalRepos, repo, startTime);
     }
+
+    // Clear status
+    writeStatus(processed, totalRepos, null, startTime);
 
     const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
     results.forEach(r => r.Timestamp = timestamp);

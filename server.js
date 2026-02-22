@@ -73,6 +73,20 @@ http.createServer((req, res) => {
         return;
     }
 
+    // API: Status
+    if (req.url === '/api/status' && req.method === 'GET') {
+        const statusPath = path.join(__dirname, 'status.json');
+        if (fs.existsSync(statusPath)) {
+            const content = fs.readFileSync(statusPath, 'utf8');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(content);
+        } else {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: "Idle", processed: 0, total: 0, etaSeconds: 0 }));
+        }
+        return;
+    }
+
     // Default to index.html if root is requested
     let filePath = req.url === '/' ? './index.html' : '.' + req.url; // Changed logic and dashboard.html to index.html
 

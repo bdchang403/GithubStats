@@ -1040,6 +1040,21 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
             if (issue.pull_request) continue; // Skip PRs, we want actual issues
 
             const issueDate = new Date(issue.created_at);
+            const labels = issue.labels.map(l => l.name.toLowerCase());
+
+            // --- NATIVE MTTR-SEC FALLBACK ---
+            // If GHAS is disabled (403), calculate MTTR-Sec globally from standard closed security issues
+            if (issue.state === 'closed' && issue.closed_at) {
+                if (labels.some(l => ["security", "vulnerability", "cve"].includes(l))) {
+                    const t0 = new Date(issue.created_at);
+                    const t1 = new Date(issue.closed_at);
+                    if (t1 > t0) {
+                        mttrAccum += (t1 - t0) / (1000 * 3600);
+                        mttrCount++;
+                    }
+                }
+            }
+
             const causedByDeploy = recentDeploys.some(deployDate => {
                 const diffHours = (issueDate - deployDate) / (1000 * 3600);
                 return diffHours >= 0 && diffHours <= 48; // Issue created within 48h after deploy
@@ -1050,8 +1065,7 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState) {
                 const defectData = await checkExternalDefect(payloadText);
 
                 if (defectData === "Unverified" || defectData === null) {
-                    // Fallback to GitHub labels
-                    const labels = issue.labels.map(l => l.name.toLowerCase());
+                    // Fallback to GitHub labels for CFR
                     if (labels.some(l => ["bug", "hotfix", "incident"].includes(l))) {
                         failureIssues++;
                     }

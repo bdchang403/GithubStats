@@ -75,6 +75,15 @@ When debugging scenarios where API data is successfully fetched but fails to app
 **3. Test the Loop Iteration**
 - When isolating missing data parameters within a `Promise.all(batch.map())` logic block, check for variable scoping issues (variables declared outside the map, or referenced before instantiation). Standard `try/catch` wrappers outside the loop will instantly abort the entire array processing if a single item causes a syntactical JavaScript error. 
 
+### ETags, 304 Not Modified, and Stale Caches
+To preserve GitHub PAT 5,000/hr limit quotas, `index.js` utilizes explicit `If-None-Match` caching logic.
+1. **The 304 Mechanism:** When `index.js` sends an API request, it includes the `ETag` string previously saved in `.api_cache/[hash].json`. If GitHub determines the resource hasn't changed, it responds with `304 Not Modified`. The script instantly skips token consumption and directly loads the local `.json` file.
+2. **Data Reconstruction:** Deleting the CSV outputs (`github_activity_log.csv`) does **not** wipe the cache. On the next execution, the script will receive 304s and successfully rebuild the entire CSV using exclusively local `.api_cache` data.
+3. **Forcing a Fresh API Fetch:** If you need to definitively pull raw un-cached payloads from GitHub (e.g., if the cache structure is corrupt, or if you are debugging a missing field), you **must delete the cache folder** before execution:
+   ```bash
+   rm -rf .api_cache/ && node index.js
+   ```
+
 ### Autonomous Environment & Browser Troubleshooting
 As an Expert AI Engineer, you must act with autonomy to verify your solutions. Do not default to asking the user to manually run commands or test UI components if you possess the capability to do so yourself within your toolset. 
 

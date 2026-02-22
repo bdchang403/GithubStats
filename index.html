@@ -1227,13 +1227,13 @@
         tr.innerHTML = `
             <td><strong>${d.Repository}</strong></td>
             <td>${d.Capability || 'N/A'}</td>
-            <td>${d['Total Commits']}</td>
-            <td>${d['True Lead Time for Changes (Hours)'].toFixed(1)}</td>
-            <td style="font-weight: bold; color: ${d['Lead Time to Production (Days)'] < 14 ? 'green' : 'var(--danger-color)'}">${d['Lead Time to Production (Days)'].toFixed(1)}</td>
-            <td>${d['CI/CD Failure Rate (%)'].toFixed(1)}%</td>
-            <td>${d['Change Failure Rate (%)'].toFixed(1)}%</td>
-            <td>${d['Avg Review Time (Hours)'].toFixed(1)}</td>
-            <td>${d['Avg Code Churn (Commits)'].toFixed(1)}</td>
+            <td>${parseFloat(d['Total Commits'] || 0)}</td>
+            <td>${parseFloat(d['True Lead Time for Changes (Hours)'] || 0).toFixed(1)}</td>
+            <td style="font-weight: bold; color: ${parseFloat(d['Lead Time to Production (Days)'] || 0) < 14 ? 'green' : 'var(--danger-color)'}">${parseFloat(d['Lead Time to Production (Days)'] || 0).toFixed(1)}</td>
+            <td>${parseFloat(d['CI/CD Failure Rate (%)'] || 0).toFixed(1)}%</td>
+            <td>${parseFloat(d['Change Failure Rate (%)'] || 0).toFixed(1)}%</td>
+            <td>${parseFloat(d['Avg Review Time (Hours)'] || 0).toFixed(1)}</td>
+            <td>${parseFloat(d['Avg Code Churn (Commits)'] || 0).toFixed(1)}</td>
             <td style="font-weight: bold; color: ${d['SQ Security Rating'] === 'A' ? 'green' : d['SQ Security Rating'] === 'B' ? 'var(--primary-color)' : 'var(--danger-color)'}">${d['SQ Security Rating'] || 'N/A'}</td>
             <td>${d['SQ Technical Debt (Days)'] ? parseFloat(d['SQ Technical Debt (Days)']).toFixed(1) : 'N/A'}</td>
             <td>${d['SQ Unit Tests'] || '0'}</td>

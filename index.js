@@ -611,8 +611,8 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState, appCod
         console.log(`  Fetching commits since ${prevState["Last Commit Date"]}`);
     }
 
-    // Multiply the PR limit by 2 to give commits a healthier buffer (e.g., 600 commits instead of 300) without blowing out API
-    const maxCommitPages = Math.ceil(maxPrsLimit / 100) * 2;
+    // Multiply the PR limit by 10 to give commits a far healthier buffer (e.g., 1000 commits) to prevent the 200 commit ceiling
+    const maxCommitPages = Math.ceil(maxPrsLimit / 100) * 10;
     const commitsRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/commits?per_page=100${sinceParam}`, maxCommitPages);
     const commits = (commitsRes && Array.isArray(commitsRes)) ? commitsRes : [];
     const committers = new Set();
@@ -1227,7 +1227,7 @@ async function main() {
         const histContent = fs.readFileSync('github_stats_history.csv', 'utf-8');
         let histData = parseCSV(histContent);
 
-        if (histData.length > 0 && (!Object.keys(histData[0]).includes('Environment') || !Object.keys(histData[0]).includes('Change Failure Rate (%)'))) {
+        if (histData.length > 0 && (!Object.keys(histData[0]).includes('AppCode') || !Object.keys(histData[0]).includes('Environment'))) {
             console.log("Migrating schema: Adding Environment and DORA/SPACE columns...");
             histData = histData.map(row => {
                 row.AppCode = row.AppCode || 'Unknown';
@@ -1319,7 +1319,7 @@ async function main() {
     let append = true;
     if (fs.existsSync('github_stats_history.csv')) {
         const firstLine = fs.readFileSync('github_stats_history.csv', 'utf-8').split('\n')[0];
-        if (!firstLine.includes('Environment') || !firstLine.includes('MTTR-Sec (Hours)')) {
+        if (!firstLine.includes('AppCode') || !firstLine.includes('Environment')) {
             append = false;
         }
     } else {
@@ -1331,6 +1331,7 @@ async function main() {
             const oldContent = fs.readFileSync('github_stats_history.csv', 'utf-8');
             const oldData = parseCSV(oldContent);
             const migratedOldData = oldData.map(r => {
+                r.AppCode = r.AppCode || 'Unknown';
                 r.Environment = r.Environment || 'Unknown';
                 r['MTTR-Sec (Hours)'] = r['MTTR-Sec (Hours)'] || 0;
                 r['Successful Deployments'] = r['Successful Deployments'] || 0;

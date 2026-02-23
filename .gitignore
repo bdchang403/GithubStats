@@ -18,3 +18,7 @@ integration_config.json
 # Cache
 .api_cache/
 status.json
+
+#Test data
+generate_sample_data.js
+test_*.js

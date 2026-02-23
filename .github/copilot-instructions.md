@@ -121,3 +121,22 @@ Use the following XML-style tags to structure your responses for complex tasks:
 - `<strategy>`: Outline your plan for refactoring or fixing the bug.
 - `<implementation>`: Provide the actual code blocks.
 </response_format>
+
+### New Refactored File Structure (Feb 2026)
+As of the recent codebase restructuring, the application has been modularized. When making changes, ensure you are modifying the correct file:
+
+**Backend/Node.js:**
+- `index.js`: The main orchestrator. It handles the high-level workflow, argument parsing, file I/O (loading input CSV, saving output CSVs), and orchestrating the data collection loop via `processRepo(...)`.
+- `src/config.js`: Centralized configuration management. Handles environment variables (`GITHUB_TOKEN`, `API_BASE_URL`, etc.), rate limit thresholds, and external integration keys.
+- `src/utils.js`: Helper functions and utilities. Contains `setupLogging`, `logError`, `writeStatus` for the UI, and the robust `parseCSV` function.
+- `src/github_api.js`: All direct interactions with the GitHub REST API. Contains `fetchGitHub` (with ETag caching), `fetchGitHubPaginated`, and specific data retrieval functions like `fetchUserEmail`.
+- `src/integrations.js`: Handles interactions with external services like Jira, ServiceNow, and fetching metrics from SonarQube. It also contains logic to check external defects.
+- `src/repo_processor.js`: Contains the core business logic for processing a repository (`processRepo`). This file imports from `github_api.js` to gather data, then interacts with external systems via `integrations.js` and calculates complex metrics like DORA and SPACE.
+
+**Frontend/Dashboard:**
+- `index.html`: The lean HTML skeleton for the dashboard. It contains the structural DOM elements (Sidebar, Metrics Grid, Charts Grid, Table).
+- `src/dashboard.css`: All styling (CSS variables, layout, colors, and responsive design) for the dashboard.
+- `src/dashboard-ui.js`: Client-side JavaScript logic. Handles fetching the generated CSVs, parsing the data, applying filters, updating KPI DOM elements, and rendering Chart.js visualizations.
+
+**Quality Assurance / Verification:**
+- `src/verify-dashboard-math.js`: This is a forensic mathematical QA tool. **CRITICAL INSTRUCTION:** If you add a new metric to `dashboard-ui.js` or change an aggregation equation, you MUST explicitly mirror that same mathematical aggregation loop inside `simulateDashboardAggregation()` in this file. This file runs via `node` at the end of the `index.js` data pull to mathematically guarantee that the static CSVs will parse safely in the Javascript browser environment without `NaN` propagation or string concatenation bugs.

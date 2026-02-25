@@ -206,7 +206,18 @@ async function main() {
         if (!fs.existsSync('github_activity_log.csv')) {
             fs.writeFileSync('github_activity_log.csv', logCols.join(',') + '\n' + logContent);
         } else {
-            const currentLog = fs.readFileSync('github_activity_log.csv', 'utf-8');
+            let currentLog = fs.readFileSync('github_activity_log.csv', 'utf-8');
+            const firstLine = currentLog.split('\n')[0];
+
+            // Schema Migration: If the old CSV header doesn't have the new PR columns, replace the header line entirely.
+            if (!firstLine.includes('Time to First Review (Hours)')) {
+                const lines = currentLog.split('\n');
+                lines[0] = logCols.join(',');
+                currentLog = lines.join('\n');
+                fs.writeFileSync('github_activity_log.csv', currentLog);
+                console.log("Migrated github_activity_log.csv headers to include new PR metrics");
+            }
+
             if (currentLog && !currentLog.endsWith('\n')) fs.appendFileSync('github_activity_log.csv', '\n');
             fs.appendFileSync('github_activity_log.csv', logContent);
         }

@@ -188,7 +188,8 @@ async function main() {
     // Save Logs
     if (allLogs.length > 0) {
         const logCols = ['Timestamp', 'Repository', 'Capability', 'Action', 'User', 'Date', 'Environment', 'Cross-Ref ID', 'Associated PR', 'ID', 'Message',
-            'Branch Duration (Hours)', 'Review Time (Hours)', 'LOC Changed', 'PR Size (Commits)', 'Target Branch'];
+            'Branch Duration (Hours)', 'Review Time (Hours)', 'LOC Changed', 'PR Size (Commits)', 'Target Branch',
+            'Time to First Review (Hours)', 'Review Comments Count', 'Requested Reviewers'];
 
         allLogs.forEach(l => l.Timestamp = timestamp);
 

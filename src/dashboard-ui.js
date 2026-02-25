@@ -595,6 +595,40 @@ function updateCharts() {
         });
     };
 
+    const createActivityAverageTrendDatasets = (metricName) => {
+        return distinctGroups.map((groupVal, idx) => {
+            const data = dateLabels.map(date => {
+                const activities = filteredActivityData.filter(d =>
+                    d[trendGrouping] === groupVal &&
+                    d._eventDate && d._eventDate.toISOString().split('T')[0] === date &&
+                    (d.Action || '').includes('Merge')
+                );
+                if (activities.length > 0) {
+                    let total = 0;
+                    let count = 0;
+                    activities.forEach(a => {
+                        const val = parseFloat(a[metricName]);
+                        if (!isNaN(val)) {
+                            total += val;
+                            count++;
+                        }
+                    });
+                    return count > 0 ? (total / count) : null;
+                }
+                return null;
+            });
+
+            return {
+                label: groupVal,
+                data: data,
+                borderColor: colors[idx % colors.length],
+                fill: false,
+                tension: 0.2,
+                spanGaps: true
+            };
+        });
+    };
+
     // Annotations for thresholds
     const leadTimePlugins = {
         annotation: {
@@ -631,6 +665,9 @@ function updateCharts() {
 
     const mttrDatasets = createMetricTrendDatasets('MTTR-Sec (Hours)');
     renderChart('chart-trend-mttr', 'line', dateLabels, mttrDatasets, mttrPlugins, 'Date', 'Hours (<96 is Target)');
+
+    const prReviewDatasets = createActivityAverageTrendDatasets('Time to First Review (Hours)');
+    renderChart('chart-trend-pr-review', 'line', dateLabels, prReviewDatasets, {}, 'Date', 'Avg Wait Hrs');
 }
 
 function renderChart(id, type, labels, datasets, customPlugins = {}, xAxisTitle = '', yAxisTitle = '') {

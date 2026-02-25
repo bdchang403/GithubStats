@@ -434,7 +434,11 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState, appCod
                     else largePRCount++;
                 }
 
-                logs.push({
+                // Extract requested reviewers:
+                const requestedReviewersObj = prDetail.requested_reviewers || [];
+                const requestedReviewers = requestedReviewersObj.map(r => r.login).join(', ');
+
+                let logEntry = {
                     Timestamp: new Date().toISOString(),
                     Repository: repoName,
                     Capability: capability,
@@ -450,11 +454,17 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState, appCod
                     "Review Time (Hours)": reviewHours.toFixed(2),
                     "LOC Changed": loc,
                     "PR Size (Commits)": prDetail.commits || 0,
-                    "Target Branch": prDetail.base.ref
-                });
+                    "Target Branch": prDetail.base.ref,
+                    "Time to First Review (Hours)": "",
+                    "Review Comments Count": 0,
+                    "Requested Reviewers": requestedReviewers
+                };
 
                 // --- 2c: Deep Metrics Extraction Continued (Only for merged PRs) ---
-                if (!isMerged) return;
+                if (!isMerged) {
+                    logs.push(logEntry);
+                    return;
+                }
 
                 // AI Proxy 1: Test Code Ratio
                 const prFilesRes = await fetchGitHubPaginated(`${API_BASE_URL}/repos/${repoName}/pulls/${prNum}/files?per_page=100`, 1);
@@ -524,6 +534,7 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState, appCod
                 if (reviewsRes && Array.isArray(reviewsRes) && reviewsRes.length > 0) {
                     prsWithReviews++;
                     totalReviewComments += reviewsRes.length;
+                    logEntry["Review Comments Count"] = reviewsRes.length;
 
                     // Wait time to first review
                     const sortedReviews = reviewsRes
@@ -533,7 +544,9 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState, appCod
                     if (sortedReviews.length > 0) {
                         const firstReviewTime = new Date(sortedReviews[0].submitted_at);
                         if (firstReviewTime > createdAt) {
-                            totalWaitTimeHours += (firstReviewTime - createdAt) / (1000 * 3600);
+                            const waitTime = (firstReviewTime - createdAt) / (1000 * 3600);
+                            totalWaitTimeHours += waitTime;
+                            logEntry["Time to First Review (Hours)"] = waitTime.toFixed(2);
                         }
 
                         if (prCommitsRes && Array.isArray(prCommitsRes)) {
@@ -542,6 +555,8 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState, appCod
                         }
                     }
                 }
+                
+                logs.push(logEntry);
             }));
         }
     }

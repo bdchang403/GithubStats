@@ -1,0 +1,13 @@
+Repository,Capability
+Repo-Alpha-01,Cap-Core
+Repo-Alpha-02,Cap-Core
+Repo-Alpha-03,Cap-Core
+Repo-Alpha-04,Cap-Core
+Repo-Beta-01,Cap-Storage
+Repo-Beta-02,Cap-Storage
+Repo-Beta-03,Cap-Storage
+Repo-Gamma-01,Cap-Ingestion
+Repo-Gamma-02,Cap-Ingestion
+Repo-Delta-01,Cap-Reporting
+Repo-Alpha-05,Cap-Core
+Repo-Alpha-06,Cap-Core

@@ -34,7 +34,8 @@ const historyHeaders = [
 
 const activityHeaders = [
     'Timestamp', 'Repository', 'Capability', 'Action', 'User', 'Date', 'Environment', 'Cross-Ref ID', 'Associated PR', 'ID', 'Message',
-    'Branch Duration (Hours)', 'Review Time (Hours)', 'LOC Changed', 'PR Size (Commits)', 'Target Branch'
+    'Branch Duration (Hours)', 'Review Time (Hours)', 'LOC Changed', 'PR Size (Commits)', 'Target Branch',
+    'Time to First Review (Hours)', 'Review Comments Count', 'Requested Reviewers'
 ];
 
 function randomFloat(min, max) { return (Math.random() * (max - min) + min).toFixed(2); }
@@ -162,19 +163,22 @@ for (let i = 0; i < 7; i++) {
             if (dailyCommits > 0) {
                 activityRows.push([
                     timestamp, p.Repository, p.Capability, "Commit", p.DistinctCommitter, recentDate, "Production",
-                    "CHG1234", "", "a1b2c3d", "Mock commit message", "", "", "", "", ""
+                    "CHG1234", "", "a1b2c3d", "Mock commit message", "", "", "", "", "",
+                    "", "", ""
                 ].join(','));
             }
             if (p.TotalMergedPRs > 0) {
                 activityRows.push([
                     timestamp, p.Repository, p.Capability, "Merge (PR)", p.DistinctPRUser, recentDate, "Production",
-                    "CHG1234", "PR #" + randomInt(1, 100), "PR #" + randomInt(1, 100), "Mock PR message", avgBranch, avgReview, avgLoc, dailyCommits, "main"
+                    "CHG1234", "PR #" + randomInt(1, 100), "PR #" + randomInt(1, 100), "Mock PR message", avgBranch, avgReview, avgLoc, dailyCommits, "main",
+                    waitTime, Math.round(reviewComments), '"reviewer_1, reviewer_2"'
                 ].join(','));
             }
             if (deploys > 0) {
                 activityRows.push([
                     timestamp, p.Repository, p.Capability, "Workflow Run (success)", "svc_bot", recentDate, "Production",
-                    "", "", "Run #" + randomInt(100, 999), "Deploy to Prod", "", "", "", "", "main"
+                    "", "", "Run #" + randomInt(100, 999), "Deploy to Prod", "", "", "", "", "main",
+                    "", "", ""
                 ].join(','));
             }
         }

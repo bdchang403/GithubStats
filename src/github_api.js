@@ -83,6 +83,13 @@ async function fetchGitHub(url) {
             if (!response.ok) {
                 // Suppress 404 console noise ONLY for optional config files or dynamic workflow discovery
                 const isOptionalFile = url.includes('.yml') || url.includes('.yaml') || url.includes('/actions/workflows');
+
+                if (response.status === 404 && !isOptionalFile) {
+                    const err = new Error(`HTTP 404: Not Found for ${url}`);
+                    err.status = 404;
+                    throw err; // Break out to the catch block
+                }
+
                 if (!(response.status === 404 && isOptionalFile)) {
                     logError(`Error ${response.status} fetch ${url}`);
                 }
@@ -111,6 +118,8 @@ async function fetchGitHub(url) {
                 _status: response.status
             };
         } catch (e) {
+            if (e.status === 404) throw e; // Do not retry 404s, bubble up to fail the repo
+
             logError(`Fetch error for ${url}: ${e.message}`);
             retries--;
             if (retries === 0) return null;

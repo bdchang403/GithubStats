@@ -435,8 +435,11 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState, appCod
                 }
 
                 // Extract requested reviewers:
+                let reviewerSet = new Set();
                 const requestedReviewersObj = prDetail.requested_reviewers || [];
-                const requestedReviewers = requestedReviewersObj.map(r => r.login).join(', ');
+                requestedReviewersObj.forEach(r => reviewerSet.add(r.login));
+
+                const prComments = (prDetail.review_comments || 0) + (prDetail.comments || 0);
 
                 let logEntry = {
                     Timestamp: new Date().toISOString(),
@@ -456,8 +459,8 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState, appCod
                     "PR Size (Commits)": prDetail.commits || 0,
                     "Target Branch": prDetail.base.ref,
                     "Time to First Review (Hours)": "",
-                    "Review Comments Count": 0,
-                    "Requested Reviewers": requestedReviewers
+                    "Review Comments Count": prComments,
+                    "Requested Reviewers": Array.from(reviewerSet).join(', ')
                 };
 
                 // --- 2c: Deep Metrics Extraction Continued (Only for merged PRs) ---
@@ -531,10 +534,22 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState, appCod
                     }
                 }
 
-                if (reviewsRes && Array.isArray(reviewsRes) && reviewsRes.length > 0) {
+                if (prComments > 0) {
                     prsWithReviews++;
-                    totalReviewComments += reviewsRes.length;
-                    logEntry["Review Comments Count"] = reviewsRes.length;
+                    totalReviewComments += prComments;
+                }
+
+                if (reviewsRes && Array.isArray(reviewsRes) && reviewsRes.length > 0) {
+                    if (prComments === 0) {
+                        prsWithReviews++;
+                        totalReviewComments += reviewsRes.length;
+                        logEntry["Review Comments Count"] = reviewsRes.length;
+                    }
+
+                    reviewsRes.forEach(r => {
+                        if (r.user && r.user.login) reviewerSet.add(r.user.login);
+                    });
+                    logEntry["Requested Reviewers"] = Array.from(reviewerSet).join(', ');
 
                     // Wait time to first review
                     const sortedReviews = reviewsRes
@@ -555,7 +570,7 @@ async function processRepo(repoName, capability, sonarQubeKey, prevState, appCod
                         }
                     }
                 }
-                
+
                 logs.push(logEntry);
             }));
         }
